@@ -8,6 +8,11 @@ using System.Threading;
 using System.Windows.Forms;
 
 static class Program {
+    public static void StartupState(string phase) {
+        File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "startup.json"),
+            "{\"pid\":" + Process.GetCurrentProcess().Id + ",\"session\":" + Process.GetCurrentProcess().SessionId
+            + ",\"phase\":\"" + phase + "\",\"utc\":\"" + DateTime.UtcNow.ToString("o") + "\"}");
+    }
     static readonly string[,] LinkRules = {
         {@"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.|mobile\.)?(?:x\.com|twitter\.com)(?=/)", "$1fxtwitter.com"},
         {@"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.)?instagram\.com(?=/)", "$1kkinstagram.com"},
@@ -20,6 +25,9 @@ static class Program {
     }
     public static bool MatchesShortcut(string process, int key, bool control, bool alt, bool windows) {
         return String.Equals(process, "Discord", StringComparison.OrdinalIgnoreCase) && key == 0x56 && control && !alt && !windows;
+    }
+    public static bool VersionChanged(string previous, string current) {
+        return previous != null && !String.IsNullOrEmpty(current) && previous != current;
     }
     [STAThread] static int Main(string[] args) {
         if (Array.IndexOf(args, "--self-test") >= 0) {
@@ -47,8 +55,9 @@ static class Program {
             if (!MatchesShortcut("Discord", 0x56, true, false, false) || MatchesShortcut("Chrome", 0x56, true, false, false)
                 || MatchesShortcut("Discord", 0x56, true, true, false) || MatchesShortcut("Discord", 0x56, true, false, true)
                 || MatchesShortcut("Discord", 0x56, false, false, false) || MatchesShortcut("Discord", 0x41, true, false, false)) throw new Exception("Shortcut tests");
+            if (VersionChanged(null, "1") || VersionChanged("1", "1") || !VersionChanged("1", "2")) throw new Exception("Update notice tests");
             // No access to the user's clipboard during automated tests.
-            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "self-test.json"), "{\"urlCases\":" + (cases.GetLength(0) + extraCases.Length) + ",\"scopeCases\":6,\"passed\":true}");
+            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "self-test.json"), "{\"urlCases\":" + (cases.GetLength(0) + extraCases.Length) + ",\"scopeCases\":6,\"updateCases\":3,\"passed\":true}");
             return 0;
         }
         if (Array.IndexOf(args, "--worker") < 0) {
@@ -60,6 +69,7 @@ static class Program {
         bool acquired;
         using (Mutex singleton = new Mutex(true, @"Local\DiscordLinkFixer.v1", out acquired)) {
             if (!acquired) return 0;
+            StartupState("visual_styles");
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             Application.EnableVisualStyles();
             try { using (Helper helper = new Helper()) Application.Run(helper); }
@@ -113,25 +123,69 @@ sealed class Helper : ApplicationContext {
     DataObject snapshot;
     uint changedSequence;
     bool enabled = true;
+    string lastWarning;
     readonly string statePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "running.json");
 
     public Helper() {
         callback = OnKey;
+        Program.StartupState("tray_icon");
         icon = new NotifyIcon { Icon = SystemIcons.Application, Text = "Discord Link Fixer", Visible = true };
+        Program.StartupState("tray_menu");
         ContextMenuStrip menu = new ContextMenuStrip();
         ToolStripMenuItem pause = new ToolStripMenuItem("Pause conversion");
         pause.Click += delegate { enabled = !enabled; pause.Text = enabled ? "Pause conversion" : "Resume conversion"; icon.Text = enabled ? "Discord Link Fixer" : "Discord Link Fixer (paused)"; };
         menu.Items.Add(pause);
         menu.Items.Add("Ctrl+Alt+V bypasses conversion").Enabled = false;
+        menu.Items.Add("Test notification", null, delegate { icon.ShowBalloonTip(5000, "Discord Link Fixer", "Notification test. This does not test Discord paste compatibility.", ToolTipIcon.Info); });
         menu.Items.Add("Quit until next login", null, delegate { ExitThread(); });
         icon.ContextMenuStrip = menu;
         restore.Interval = 1000;
         restore.Tick += delegate { RestoreClipboard(); };
         refresh.Interval = 60000;
-        refresh.Tick += delegate { InstallHook(); };
+        refresh.Tick += delegate {
+            try {
+                InstallHook();
+                lastWarning = null;
+                WriteStatus(true);
+            } catch {
+                Warn("Keyboard hook refresh failed. Link conversion may be unavailable; reopen the helper.");
+                WriteStatus(false);
+            }
+            CheckDiscordVersion();
+        };
+        Program.StartupState("install_hook");
         InstallHook();
         refresh.Start();
-        File.WriteAllText(statePath, "{\"pid\":" + Process.GetCurrentProcess().Id + ",\"session\":" + Process.GetCurrentProcess().SessionId + ",\"hookInstalled\":true}");
+        WriteStatus(true);
+        Program.StartupState("ready");
+    }
+
+    void WriteStatus(bool installed) {
+        File.WriteAllText(statePath, "{\"pid\":" + Process.GetCurrentProcess().Id + ",\"session\":" + Process.GetCurrentProcess().SessionId + ",\"hookInstalled\":" + (installed ? "true" : "false") + "}");
+    }
+
+    void Warn(string message) {
+        if (lastWarning == message) return;
+        lastWarning = message;
+        icon.ShowBalloonTip(5000, "Discord Link Fixer", message, ToolTipIcon.Warning);
+    }
+
+    void CheckDiscordVersion() {
+        try {
+            uint pid;
+            GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+            using (Process foreground = Process.GetProcessById((int)pid)) {
+                if (!String.Equals(foreground.ProcessName, "Discord", StringComparison.OrdinalIgnoreCase)) return;
+                string version = FileVersionInfo.GetVersionInfo(foreground.MainModule.FileName).ProductVersion;
+                if (String.IsNullOrEmpty(version)) return;
+                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "discord-version.txt");
+                string previous = File.Exists(path) ? File.ReadAllText(path) : null;
+                if (previous == version) return;
+                File.WriteAllText(path, version);
+                if (Program.VersionChanged(previous, version))
+                    icon.ShowBalloonTip(5000, "Discord Link Fixer", "Discord updated. Paste compatibility has not been verified. Try a supported link in an unsent draft; do not press Send.", ToolTipIcon.Info);
+            }
+        } catch { /* Version metadata is optional; it must not interrupt conversion. */ }
     }
 
     void InstallHook() {

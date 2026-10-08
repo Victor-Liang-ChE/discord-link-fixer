@@ -6,6 +6,8 @@ __pycache__/
 self-test.json
 running.json
 supervisor.json
+startup.json
+discord-version.txt
 install-receipt.json
 quit-until-login
 last-error.txt

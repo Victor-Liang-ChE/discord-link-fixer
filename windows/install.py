@@ -34,7 +34,7 @@ shortcut = shell.CreateShortCut(str(Path(shell.SpecialFolders('Desktop')) / 'Dis
 shortcut.Targetpath = str(exe)
 shortcut.Arguments = '--login'
 shortcut.WorkingDirectory = str(root)
-shortcut.Description = 'Convert X tweet links on Ctrl+V in Discord. Tray menu offers Pause and Quit.'
+shortcut.Description = 'Convert social-media links on Ctrl+V in Discord. Tray menu offers Pause and Quit.'
 shortcut.Save()
 
 scheduler = win32com.client.Dispatch('Schedule.Service')
@@ -102,11 +102,15 @@ registered.Run('')
 for attempt in range(240):
     if (root / 'running.json').exists():
         state = json.loads((root / 'running.json').read_text())
-        if state.get('hookInstalled') and psutil.pid_exists(state.get('pid', 0)) and Path(psutil.Process(state['pid']).exe()).resolve() == exe.resolve():
+        startup = json.loads((root / 'startup.json').read_text()) if (root / 'startup.json').exists() else {}
+        if startup.get('pid') == state.get('pid') and startup.get('phase') == 'ready' and state.get('hookInstalled') and psutil.pid_exists(state.get('pid', 0)) and Path(psutil.Process(state['pid']).exe()).resolve() == exe.resolve():
             break
     time.sleep(0.25)
 else:
-    raise RuntimeError('Task registered, but GUI helper did not report an installed hook. Check interactive login.')
+    phase = 'unknown'
+    if (root / 'startup.json').exists():
+        phase = json.loads((root / 'startup.json').read_text()).get('phase', 'unknown')
+    raise RuntimeError('Task registered, but GUI helper did not report an installed hook. Startup phase: ' + phase)
 receipt = {'tests': tests, 'running': state, 'path': str(exe), 'task': name,
     'loginStart': True, 'crashRetries': 3, 'hookRefreshSeconds': 60,
     'supervisorRestart': True, 'recoveryTask': 'Discord Link Fixer Recovery', 'recoveryIntervalSeconds': 60,

@@ -1,5 +1,17 @@
 import AppKit
 import ApplicationServices
+import UserNotifications
+
+func healthWarning(enabled: Bool, trusted: Bool, hookActive: Bool) -> String? {
+    if !enabled { return nil }
+    if !trusted { return "Accessibility permission is missing. Link conversion is inactive." }
+    if !hookActive { return "Keyboard access is unavailable. Link conversion is inactive." }
+    return nil
+}
+
+func discordVersionChanged(previous: String?, current: String) -> Bool {
+    previous != nil && !current.isEmpty && previous != current
+}
 
 let linkRules: [(NSRegularExpression, String)] = [
     (#"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.|mobile\.)?(?:x\.com|twitter\.com)(?=/)"#, "$1fxtwitter.com"),
@@ -49,6 +61,13 @@ if CommandLine.arguments.contains("--self-test") {
     precondition(!shouldConvert(bundle: "com.hnc.Discord", key: 9, flags: [.maskCommand, .maskControl]))
     precondition(!shouldConvert(bundle: "com.hnc.Discord", key: 9, flags: []))
     precondition(!shouldConvert(bundle: "com.hnc.Discord", key: 0, flags: .maskCommand))
+    precondition(healthWarning(enabled: false, trusted: false, hookActive: false) == nil)
+    precondition(healthWarning(enabled: true, trusted: true, hookActive: true) == nil)
+    precondition(healthWarning(enabled: true, trusted: false, hookActive: true) != nil)
+    precondition(healthWarning(enabled: true, trusted: true, hookActive: false) != nil)
+    precondition(!discordVersionChanged(previous: nil, current: "1"))
+    precondition(!discordVersionChanged(previous: "1", current: "1"))
+    precondition(discordVersionChanged(previous: "1", current: "2"))
     // A private pasteboard tests byte-preserving restoration without touching the user's clipboard.
     let board = NSPasteboard.withUniqueName()
     defer { board.releaseGlobally() }
@@ -67,7 +86,7 @@ if CommandLine.arguments.contains("--self-test") {
     board.setString("newly copied text", forType: .string)
     restoreClipboard(snapshot, board: board, expectedCount: staleCount)
     precondition(board.string(forType: .string) == "newly copied text")
-    print("Passed \(cases.count + extraCases.count) conversion cases, 7 shortcut/scope cases, clipboard restoration and copy-race checks.")
+    print("Passed \(cases.count + extraCases.count) conversion cases, 7 shortcut/scope cases, 7 health/update cases, clipboard restoration and copy-race checks.")
     exit(0)
 }
 
@@ -92,6 +111,9 @@ final class Helper: NSObject, NSApplicationDelegate {
     var enabled = true
     var pending: ([NSPasteboardItem], Int)?
     var lastStatus = Data()
+    var notificationsAllowed = false
+    var lastWarning: String?
+    var healthTicks = 0
     let stateItem = NSMenuItem(title: "Waiting for Accessibility approval", action: nil, keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -101,7 +123,7 @@ final class Helper: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(stateItem)
         menu.addItem(.separator())
-        for (title, action) in [("Pause / Resume", #selector(toggle)), ("Enable Accessibility…", #selector(permissions)), ("Quit Discord Link Fixer", #selector(quit))] {
+        for (title, action) in [("Pause / Resume", #selector(toggle)), ("Enable Accessibility…", #selector(permissions)), ("Enable notifications…", #selector(notificationPermission)), ("Test notification", #selector(testNotification)), ("Quit Discord Link Fixer", #selector(quit))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = self
             menu.addItem(item)
@@ -111,23 +133,83 @@ final class Helper: NSObject, NSApplicationDelegate {
         // Permission is requested only from the user's menu action, never on a
         // startup or recovery loop. A denied permission must not reopen Settings.
         writeStatus()
+        if !UserDefaults.standard.bool(forKey: "notificationPermissionRequested") {
+            notificationPermission()
+        } else {
+            UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+                DispatchQueue.main.async {
+                    self?.notificationsAllowed = settings.authorizationStatus == .authorized
+                    self?.lastWarning = nil
+                    self?.writeStatus()
+                }
+            }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             guard let self else { return }
             if let tap = self.tap, !CGEvent.tapIsEnabled(tap: tap) { CGEvent.tapEnable(tap: tap, enable: true) }
             if self.tap == nil { self.installTap() }
             self.writeStatus()
+            self.healthTicks += 1
+            if self.healthTicks % 30 == 0 { self.checkDiscordVersion() }
         }
     }
 
     func writeStatus() {
         let trusted = AXIsProcessTrusted()
         let active = enabled && trusted && tap.map { CGEvent.tapIsEnabled(tap: $0) } == true
+        let warning = healthWarning(enabled: enabled, trusted: trusted, hookActive: tap.map { CGEvent.tapIsEnabled(tap: $0) } == true)
+        status.button?.title = warning == nil ? (enabled ? "Link" : "LinkⅡ") : "Link!"
+        stateItem.title = warning ?? (enabled ? "Active • ⌘V in Discord • ⌥⌘V bypasses" : "Paused")
+        if warning != lastWarning {
+            lastWarning = warning
+            if let warning { notify("health", warning) }
+        }
         let data = try! JSONSerialization.data(withJSONObject: ["pid": ProcessInfo.processInfo.processIdentifier,
-            "accessibilityApproved": trusted, "active": active, "enabled": enabled], options: [.sortedKeys])
+            "accessibilityApproved": trusted, "active": active, "enabled": enabled,
+            "notificationsAllowed": notificationsAllowed], options: [.sortedKeys])
         guard data != lastStatus else { return }
         lastStatus = data
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Discord Link Fixer")
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try? data.write(to: root.appendingPathComponent("mac-running.json"), options: .atomic)
+    }
+
+    func notify(_ key: String, _ message: String) {
+        guard notificationsAllowed else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Discord Link Fixer"
+        content.body = message
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: key, content: content, trigger: nil))
+    }
+
+    @objc func notificationPermission() {
+        UserDefaults.standard.set(true, forKey: "notificationPermissionRequested")
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
+            DispatchQueue.main.async {
+                self?.notificationsAllowed = granted
+                self?.lastWarning = nil
+                self?.writeStatus()
+            }
+        }
+    }
+
+    @objc func testNotification() {
+        if !notificationsAllowed {
+            stateItem.title = "Notifications are disabled. Allow them in System Settings."
+            return
+        }
+        notify("test", "Notification test. This does not test Discord paste compatibility.")
+    }
+
+    func checkDiscordVersion() {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              app.bundleIdentifier == "com.hnc.Discord", let url = app.bundleURL,
+              let version = Bundle(url: url)?.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return }
+        let previous = UserDefaults.standard.string(forKey: "discordVersion")
+        UserDefaults.standard.set(version, forKey: "discordVersion")
+        if discordVersionChanged(previous: previous, current: version) {
+            notify("discord-update", "Discord updated. Paste compatibility has not been verified. Try a supported link in an unsent draft; do not press Send.")
+        }
     }
 
     func installTap() {
@@ -199,7 +281,7 @@ final class Helper: NSObject, NSApplicationDelegate {
 }
 
 let app = NSApplication.shared
-if NSRunningApplication.runningApplications(withBundleIdentifier: "local.discord-link-fixer")
+if NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "local.discord-link-fixer")
     .contains(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) { exit(0) }
 app.setActivationPolicy(.accessory)
 let helper = Helper()

@@ -1,0 +1,13 @@
+*.exe
+*.app/
+*.unsigned.shortcut
+*.log
+__pycache__/
+self-test.json
+running.json
+supervisor.json
+install-receipt.json
+quit-until-login
+last-error.txt
+.DS_Store
+build/

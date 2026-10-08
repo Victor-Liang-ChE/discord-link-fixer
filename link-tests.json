@@ -1,0 +1,20 @@
+[
+  ["https://twitter.com/user/status/123", "https://fxtwitter.com/user/status/123"],
+  ["https://www.twitter.com/user/status/123", "https://fxtwitter.com/user/status/123"],
+  ["https://x.com/user/status/123", "https://fxtwitter.com/user/status/123"],
+  ["https://www.x.com/user/status/123", "https://fxtwitter.com/user/status/123"],
+  ["https://instagram.com/p/ABC/?igsh=123#part", "https://kkinstagram.com/p/ABC/?igsh=123#part"],
+  ["https://www.instagram.com/reel/ABC/?igsh=123", "https://kkinstagram.com/reel/ABC/?igsh=123"],
+  ["https://tiktok.com/@user/video/123?lang=en", "https://tnktok.com/@user/video/123?lang=en"],
+  ["https://www.tiktok.com/@user/video/123", "https://tnktok.com/@user/video/123"],
+  ["https://reddit.com/r/test/comments/abc/title/?share_id=1", "https://vxreddit.com/r/test/comments/abc/title/?share_id=1"],
+  ["https://www.reddit.com/r/test/s/ABC", "https://vxreddit.com/r/test/s/ABC"],
+  ["🦊 <https://www.INSTAGRAM.com/p/ABC/>.", "🦊 <https://kkinstagram.com/p/ABC/>."],
+  ["http://www.reddit.com/r/test/", "http://vxreddit.com/r/test/"],
+  ["https://instagram.com.evil.example/p/ABC/", "https://instagram.com.evil.example/p/ABC/"],
+  ["https://tiktok.com.evil.example/@u/video/1", "https://tiktok.com.evil.example/@u/video/1"],
+  ["https://reddit.com@evil.example/r/test/", "https://reddit.com@evil.example/r/test/"],
+  ["https://evil.example/https://instagram.com/p/ABC/", "https://evil.example/https://instagram.com/p/ABC/"],
+  ["https://kkinstagram.com/p/ABC/ https://tnktok.com/@u/video/1 https://vxreddit.com/r/test/", "https://kkinstagram.com/p/ABC/ https://tnktok.com/@u/video/1 https://vxreddit.com/r/test/"],
+  ["https://x.com/u/status/1\nhttps://instagram.com/p/A/ https://www.tiktok.com/@u/video/2 https://reddit.com/r/test/", "https://fxtwitter.com/u/status/1\nhttps://kkinstagram.com/p/A/ https://tnktok.com/@u/video/2 https://vxreddit.com/r/test/"]
+]

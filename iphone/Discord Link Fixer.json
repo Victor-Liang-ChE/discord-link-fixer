@@ -1,0 +1,102 @@
+{
+  "WFWorkflowName": "Discord Link Fixer",
+  "WFWorkflowClientVersion": "5037.109",
+  "WFWorkflowClientRelease": "26.0",
+  "WFWorkflowMinimumClientVersion": 900,
+  "WFWorkflowMinimumClientVersionString": "900",
+  "WFWorkflowIcon": {"WFWorkflowIconStartColor": 4282601983, "WFWorkflowIconGlyphNumber": 59511},
+  "WFWorkflowTypes": ["ActionExtension"],
+  "WFWorkflowInputContentItemClasses": ["WFStringContentItem", "WFURLContentItem"],
+  "WFWorkflowNoInputBehavior": {"Name": "WFWorkflowNoInputBehaviorGetClipboard", "Parameters": {}},
+  "WFWorkflowHasShortcutInputVariables": true,
+  "WFWorkflowImportQuestions": [],
+  "WFWorkflowActions": [
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.comment",
+      "WFWorkflowActionParameters": {"WFCommentActionText": "Share an X/Twitter, Instagram, TikTok or Reddit URL to this shortcut, then paste into Discord. If started without Share Sheet input, use the clipboard. Only the domain changes; paths and query strings remain intact. Nothing is sent automatically. This shortcut needs no background process or startup job."}
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.detect.text",
+      "WFWorkflowActionParameters": {
+        "UUID": "AE3603C4-AF37-4F6E-9FAA-EA51B28BD59C",
+        "WFInput": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ExtensionInput"}}
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+      "WFWorkflowActionParameters": {
+        "WFControlFlowMode": 0,
+        "GroupingIdentifier": "204FBD29-CE94-480B-ACB3-E524C30EBB62",
+        "WFCondition": 100,
+        "WFInput": {"Type": "Variable", "Variable": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ActionOutput", "OutputUUID": "AE3603C4-AF37-4F6E-9FAA-EA51B28BD59C", "OutputName": "Text"}}}
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.text.replace",
+      "WFWorkflowActionParameters": {
+        "UUID": "F5E1BBC5-37FB-4C1A-BFE8-00D556AAE11C",
+        "WFInput": {"WFSerializationType": "WFTextTokenString", "Value": {"string": "￼", "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputUUID": "AE3603C4-AF37-4F6E-9FAA-EA51B28BD59C", "OutputName": "Text"}}}},
+        "WFReplaceTextFind": "(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\\.|mobile\\.)?(?:x\\.com|twitter\\.com)(?=/)",
+        "WFReplaceTextReplace": "$1fxtwitter.com",
+        "WFReplaceTextCaseSensitive": false,
+        "WFReplaceTextRegularExpression": true
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.text.replace",
+      "WFWorkflowActionParameters": {
+        "UUID": "2BEA320C-1C35-4ED3-92F9-C5A1E2343401",
+        "WFInput": {"WFSerializationType": "WFTextTokenString", "Value": {"string": "￼", "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputUUID": "F5E1BBC5-37FB-4C1A-BFE8-00D556AAE11C", "OutputName": "Updated Text"}}}},
+        "WFReplaceTextFind": "(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\\.)?instagram\\.com(?=/)",
+        "WFReplaceTextReplace": "$1kkinstagram.com",
+        "WFReplaceTextCaseSensitive": false,
+        "WFReplaceTextRegularExpression": true
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.text.replace",
+      "WFWorkflowActionParameters": {
+        "UUID": "2BEA320C-1C35-4ED3-92F9-C5A1E2343402",
+        "WFInput": {"WFSerializationType": "WFTextTokenString", "Value": {"string": "￼", "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputUUID": "2BEA320C-1C35-4ED3-92F9-C5A1E2343401", "OutputName": "Updated Text"}}}},
+        "WFReplaceTextFind": "(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\\.)?tiktok\\.com(?=/)",
+        "WFReplaceTextReplace": "$1tnktok.com",
+        "WFReplaceTextCaseSensitive": false,
+        "WFReplaceTextRegularExpression": true
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.text.replace",
+      "WFWorkflowActionParameters": {
+        "UUID": "2BEA320C-1C35-4ED3-92F9-C5A1E2343403",
+        "WFInput": {"WFSerializationType": "WFTextTokenString", "Value": {"string": "￼", "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputUUID": "2BEA320C-1C35-4ED3-92F9-C5A1E2343402", "OutputName": "Updated Text"}}}},
+        "WFReplaceTextFind": "(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\\.)?reddit\\.com(?=/)",
+        "WFReplaceTextReplace": "$1vxreddit.com",
+        "WFReplaceTextCaseSensitive": false,
+        "WFReplaceTextRegularExpression": true
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.setclipboard",
+      "WFWorkflowActionParameters": {
+        "WFLocalOnly": true,
+        "WFInput": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ActionOutput", "OutputUUID": "2BEA320C-1C35-4ED3-92F9-C5A1E2343403", "OutputName": "Updated Text"}}
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+      "WFWorkflowActionParameters": {"WFControlFlowMode": 1, "GroupingIdentifier": "204FBD29-CE94-480B-ACB3-E524C30EBB62"}
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.alert",
+      "WFWorkflowActionParameters": {
+        "WFAlertActionTitle": "No link received",
+        "WFAlertActionMessage": "Nothing was copied. Share the post's link to Discord Link Fixer, or copy its link and run this shortcut again.",
+        "WFAlertActionCancelButtonShown": false
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+      "WFWorkflowActionParameters": {"WFControlFlowMode": 2, "GroupingIdentifier": "204FBD29-CE94-480B-ACB3-E524C30EBB62"}
+    }
+  ]
+}

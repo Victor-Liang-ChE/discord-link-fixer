@@ -1,0 +1,207 @@
+import AppKit
+import ApplicationServices
+
+let linkRules: [(NSRegularExpression, String)] = [
+    (#"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.|mobile\.)?(?:x\.com|twitter\.com)(?=/)"#, "$1fxtwitter.com"),
+    (#"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.)?instagram\.com(?=/)"#, "$1kkinstagram.com"),
+    (#"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.)?tiktok\.com(?=/)"#, "$1tnktok.com"),
+    (#"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.)?reddit\.com(?=/)"#, "$1vxreddit.com"),
+].map { (try! NSRegularExpression(pattern: $0.0), $0.1) }
+
+func convert(_ text: String) -> String {
+    linkRules.reduce(text) { result, rule in
+        rule.0.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: rule.1)
+    }
+}
+
+func shouldConvert(bundle: String?, key: Int64, flags: CGEventFlags) -> Bool {
+    bundle == "com.hnc.Discord" && key == 9 && flags.contains(.maskCommand)
+        && !flags.contains(.maskAlternate) && !flags.contains(.maskControl)
+}
+
+if CommandLine.arguments.contains("--self-test") {
+    let sample = "https://x.com/eschatolocation/status/2107617817570709682?s=46"
+    let cases: [(String, String)] = [
+        (sample, sample.replacingOccurrences(of: "x.com", with: "fxtwitter.com")),
+        ("Look: <https://twitter.com/user/status/123#fragment>", "Look: <https://fxtwitter.com/user/status/123#fragment>"),
+        ("https://www.x.com/user/status/123/photo/1", "https://fxtwitter.com/user/status/123/photo/1"),
+        ("http://mobile.twitter.com/user/status/123", "http://fxtwitter.com/user/status/123"),
+        ("https://x.com/i/web/status/123?s=46", "https://fxtwitter.com/i/web/status/123?s=46"),
+        (sample + "\n" + sample, convert(sample) + "\n" + convert(sample)),
+        ("https://x.com/user", "https://fxtwitter.com/user"),
+        ("https://x.com.evil.example/user/status/123", "https://x.com.evil.example/user/status/123"),
+        ("https://evil.example/https://x.com/user/status/123", "https://evil.example/https://x.com/user/status/123"),
+        ("https://x.com/user/status/123abc", "https://fxtwitter.com/user/status/123abc"),
+        ("https://fxtwitter.com/user/status/123", "https://fxtwitter.com/user/status/123"),
+        ("ordinary text 🦊", "ordinary text 🦊"),
+    ]
+    for (input, expected) in cases { precondition(convert(input) == expected, "Conversion mismatch: \(input)") }
+    let fixtureURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["DISCORD_LINK_FIXER_TESTS"] ?? NSHomeDirectory() + "/Library/Application Support/Discord Link Fixer/link-tests.json")
+    let extraCases = try! JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as! [[String]]
+    for test in extraCases {
+        precondition(convert(test[0]) == test[1], "Additional URL conversion mismatch")
+        precondition(convert(test[1]) == test[1], "Conversion is not idempotent")
+    }
+    precondition(shouldConvert(bundle: "com.hnc.Discord", key: 9, flags: .maskCommand))
+    precondition(shouldConvert(bundle: "com.hnc.Discord", key: 9, flags: [.maskCommand, .maskShift]))
+    precondition(!shouldConvert(bundle: "com.apple.Safari", key: 9, flags: .maskCommand))
+    precondition(!shouldConvert(bundle: "com.hnc.Discord", key: 9, flags: [.maskCommand, .maskAlternate]))
+    precondition(!shouldConvert(bundle: "com.hnc.Discord", key: 9, flags: [.maskCommand, .maskControl]))
+    precondition(!shouldConvert(bundle: "com.hnc.Discord", key: 9, flags: []))
+    precondition(!shouldConvert(bundle: "com.hnc.Discord", key: 0, flags: .maskCommand))
+    // A private pasteboard tests byte-preserving restoration without touching the user's clipboard.
+    let board = NSPasteboard.withUniqueName()
+    defer { board.releaseGlobally() }
+    let original = NSPasteboardItem()
+    original.setString(sample, forType: .string)
+    original.setData(Data([0, 1, 255]), forType: NSPasteboard.PasteboardType("test.original"))
+    board.writeObjects([original])
+    let snapshot = clipboardSnapshot(board)
+    board.clearContents()
+    board.setString(convert(sample), forType: .string)
+    restoreClipboard(snapshot, board: board, expectedCount: board.changeCount)
+    precondition(board.string(forType: .string) == sample)
+    precondition(board.data(forType: NSPasteboard.PasteboardType("test.original")) == Data([0, 1, 255]))
+    let staleCount = board.changeCount
+    board.clearContents()
+    board.setString("newly copied text", forType: .string)
+    restoreClipboard(snapshot, board: board, expectedCount: staleCount)
+    precondition(board.string(forType: .string) == "newly copied text")
+    print("Passed \(cases.count + extraCases.count) conversion cases, 7 shortcut/scope cases, clipboard restoration and copy-race checks.")
+    exit(0)
+}
+
+func clipboardSnapshot(_ board: NSPasteboard) -> [NSPasteboardItem] {
+    (board.pasteboardItems ?? []).map { item in
+        let copy = NSPasteboardItem()
+        for type in item.types { if let data = item.data(forType: type) { copy.setData(data, forType: type) } }
+        return copy
+    }
+}
+
+func restoreClipboard(_ items: [NSPasteboardItem], board: NSPasteboard, expectedCount: Int) {
+    guard board.changeCount == expectedCount else { return }
+    board.clearContents()
+    board.writeObjects(items)
+}
+
+final class Helper: NSObject, NSApplicationDelegate {
+    var status: NSStatusItem!
+    var tap: CFMachPort?
+    var timer: Timer?
+    var enabled = true
+    var pending: ([NSPasteboardItem], Int)?
+    var lastStatus = Data()
+    let stateItem = NSMenuItem(title: "Waiting for Accessibility approval", action: nil, keyEquivalent: "")
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        status.button?.title = "Link"
+        status.button?.toolTip = "Discord Link Fixer"
+        let menu = NSMenu()
+        menu.addItem(stateItem)
+        menu.addItem(.separator())
+        for (title, action) in [("Pause / Resume", #selector(toggle)), ("Enable Accessibility…", #selector(permissions)), ("Quit Discord Link Fixer", #selector(quit))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        status.menu = menu
+        installTap()
+        // Permission is requested only from the user's menu action, never on a
+        // startup or recovery loop. A denied permission must not reopen Settings.
+        writeStatus()
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if let tap = self.tap, !CGEvent.tapIsEnabled(tap: tap) { CGEvent.tapEnable(tap: tap, enable: true) }
+            if self.tap == nil { self.installTap() }
+            self.writeStatus()
+        }
+    }
+
+    func writeStatus() {
+        let trusted = AXIsProcessTrusted()
+        let active = enabled && trusted && tap.map { CGEvent.tapIsEnabled(tap: $0) } == true
+        let data = try! JSONSerialization.data(withJSONObject: ["pid": ProcessInfo.processInfo.processIdentifier,
+            "accessibilityApproved": trusted, "active": active, "enabled": enabled], options: [.sortedKeys])
+        guard data != lastStatus else { return }
+        lastStatus = data
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Discord Link Fixer")
+        try? data.write(to: root.appendingPathComponent("mac-running.json"), options: .atomic)
+    }
+
+    func installTap() {
+        guard AXIsProcessTrusted() else { return }
+        let callback: CGEventTapCallBack = { _, type, event, context in
+            let helper = Unmanaged<Helper>.fromOpaque(context!).takeUnretainedValue()
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                if let tap = helper.tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            } else if type == .keyDown && helper.enabled && shouldConvert(
+                bundle: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+                key: event.getIntegerValueField(.keyboardEventKeycode), flags: event.flags
+            ) { helper.preparePaste() }
+            return Unmanaged.passUnretained(event)
+        }
+        guard let created = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
+            options: .defaultTap, eventsOfInterest: 1 << CGEventType.keyDown.rawValue,
+            callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque()) else {
+            stateItem.title = "Keyboard access unavailable; reopen after approval"
+            return
+        }
+        tap = created
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, created, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: created, enable: true)
+        stateItem.title = enabled ? "Active • ⌘V in Discord • ⌥⌘V bypasses" : "Paused"
+    }
+
+    func preparePaste() {
+        let board = NSPasteboard.general
+        guard let items = board.pasteboardItems, items.count == 1,
+            !items[0].types.contains(.fileURL), !items[0].types.contains(.png), !items[0].types.contains(.tiff),
+            let text = board.string(forType: .string), text.utf8.count < 1_000_000 else { return }
+        let converted = convert(text)
+        guard converted != text else { return }
+        let snapshot = clipboardSnapshot(board)
+        board.clearContents()
+        guard board.setString(converted, forType: .string) else {
+            restoreClipboard(snapshot, board: board, expectedCount: board.changeCount)
+            return
+        }
+        let count = board.changeCount
+        pending = (snapshot, count)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            restoreClipboard(snapshot, board: board, expectedCount: count)
+            if self?.pending?.1 == count { self?.pending = nil }
+        }
+    }
+
+    @objc func toggle() {
+        enabled.toggle()
+        status.button?.title = enabled ? "Link" : "LinkⅡ"
+        stateItem.title = enabled ? (tap == nil ? "Waiting for Accessibility approval" : "Active • ⌘V in Discord • ⌥⌘V bypasses") : "Paused"
+        writeStatus()
+    }
+
+    @objc func permissions() {
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+    }
+
+    @objc func quit() { NSApplication.shared.terminate(nil) }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let (snapshot, count) = pending { restoreClipboard(snapshot, board: .general, expectedCount: count) }
+        if let tap { CFMachPortInvalidate(tap) }
+        timer?.invalidate()
+    }
+}
+
+let app = NSApplication.shared
+if NSRunningApplication.runningApplications(withBundleIdentifier: "local.discord-link-fixer")
+    .contains(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) { exit(0) }
+app.setActivationPolicy(.accessory)
+let helper = Helper()
+app.delegate = helper
+app.run()

@@ -13,3 +13,5 @@ quit-until-login
 last-error.txt
 .DS_Store
 build/
+*.dmg
+*.dmg.sha256

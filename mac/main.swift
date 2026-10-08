@@ -32,6 +32,7 @@ func shouldConvert(bundle: String?, key: Int64, flags: CGEventFlags) -> Bool {
 }
 
 if CommandLine.arguments.contains("--self-test") {
+    try Startup.selfTest()
     let sample = "https://x.com/eschatolocation/status/2107617817570709682?s=46"
     let cases: [(String, String)] = [
         (sample, sample.replacingOccurrences(of: "x.com", with: "fxtwitter.com")),
@@ -48,7 +49,9 @@ if CommandLine.arguments.contains("--self-test") {
         ("ordinary text 🦊", "ordinary text 🦊"),
     ]
     for (input, expected) in cases { precondition(convert(input) == expected, "Conversion mismatch: \(input)") }
-    let fixtureURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["DISCORD_LINK_FIXER_TESTS"] ?? NSHomeDirectory() + "/Library/Application Support/Discord Link Fixer/link-tests.json")
+    let fixtureURL = ProcessInfo.processInfo.environment["DISCORD_LINK_FIXER_TESTS"].map { URL(fileURLWithPath: $0) }
+        ?? Bundle.main.url(forResource: "link-tests", withExtension: "json")
+        ?? URL(fileURLWithPath: NSHomeDirectory() + "/Library/Application Support/Discord Link Fixer/link-tests.json")
     let extraCases = try! JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as! [[String]]
     for test in extraCases {
         precondition(convert(test[0]) == test[1], "Additional URL conversion mismatch")
@@ -281,9 +284,19 @@ final class Helper: NSObject, NSApplicationDelegate {
 }
 
 let app = NSApplication.shared
-if NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "local.discord-link-fixer")
+if !CommandLine.arguments.contains("--launch-agent"), NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "local.discord-link-fixer")
     .contains(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) { exit(0) }
 app.setActivationPolicy(.accessory)
+do {
+    if try Startup.register(app: Bundle.main.bundleURL, home: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) { exit(0) }
+} catch {
+    let alert = NSAlert()
+    alert.messageText = "Discord Link Fixer setup"
+    alert.informativeText = error.localizedDescription
+    alert.addButton(withTitle: "Quit")
+    alert.runModal()
+    exit(1)
+}
 let helper = Helper()
 app.delegate = helper
 app.run()

@@ -14,6 +14,7 @@ The rules support www variants and mobile X/Twitter links. Paths, queries, fragm
 ## Source
 
 - `mac/main.swift`: complete native Mac helper.
+- `mac/Startup.swift`: first-launch startup registration, ownership checks and rollback.
 - `windows/DiscordLinkFixer.cs`: complete Windows helper and crash supervisor.
 - `windows/install.py`: compiler, desktop shortcut and startup/recovery task setup.
 - `iphone/Discord Link Fixer.json`: editable Apple Shortcut workflow.
@@ -22,21 +23,40 @@ The rules support www variants and mobile X/Twitter links. Paths, queries, fragm
 
 ## Mac
 
-Requires the Apple command-line developer tools and macOS. Download or clone the repository first. From its root in Bash, install with:
+Download the [Mac disk image](https://github.com/Victor-Liang-ChE/discord-link-fixer/releases/download/v1.1.0/Discord-Link-Fixer-1.1.0-universal.dmg). No Terminal, Python, Swift or developer tools are needed to use the download.
+
+1. Open the DMG.
+2. Drag **Discord Link Fixer** onto **Applications**.
+3. Eject the disk image and open the installed app from Applications.
+4. Grant Accessibility permission in System Settings. Allow Notifications if you want warning banners.
+
+On first launch, the app registers startup at login and hands over to launchd for crash recovery. It shows a **Link** menu in the menu bar, not a normal app window. The menu includes Pause, permission controls and Test notification. A normal Quit stays stopped until the next login; opening the app manually resumes it. The app refuses to configure startup from the mounted image or an unrelated startup entry. `/Applications` and your user Applications folder are supported.
+
+Command-V in Discord converts supported links. Option-Command-V bypasses conversion.
+
+The download contains Apple Silicon and Intel executables and requires macOS 13 or newer. Native testing was performed on Apple Silicon; Intel execution and a clean-machine quarantined download have not been independently tested. This release is locally signed, not Apple Developer ID signed or notarized. macOS may block its first opening. If you trust the source and checksum, follow [Apple's opening guidance](https://support.apple.com/en-us/102445). Do not disable Gatekeeper or remove quarantine as an installation step.
+
+For updates, Quit the helper before replacing the app in the same Applications folder, then open the replacement. Rebuilding with another signer or moving to a different copy can require permission/startup setup again.
+
+To uninstall, Quit the helper, remove its matching LaunchAgent from `~/Library/LaunchAgents`, and move the app to Trash. Revoke its Accessibility permission if desired. The default startup label is `local.discord-link-fixer`; upgraded installations can retain an existing label. Optional Bash removal of the default job is `launchctl bootout "gui/$(id -u)/local.discord-link-fixer"`. Never unload a different target's job.
+
+### Building from source
+
+The source tools remain for developers, not as the primary install flow. Apple command-line developer tools are required:
 
 ```bash
-bash mac/install.sh
+bash mac/build.sh          # Build a universal app
+bash mac/test-startup.sh   # Test actual first-launch takeover and crash recovery
+bash mac/package.sh        # Build the drag-to-Applications DMG
 ```
 
-The installer builds and tests the app, installs it in `~/Applications`, registers a user LaunchAgent, and starts it. It starts again at login and retries abnormal exits. A normal Quit stays stopped until the next login. Grant Accessibility permission in System Settings and allow Notifications when requested. The Link menu includes Pause, permission controls and Test notification. `bash mac/build.sh` remains available for a build without installation.
-
-Command-V in Discord converts supported links. Option-Command-V bypasses conversion. The build defaults to ad-hoc signing for a first local trial. Rebuilding can require Accessibility approval again. Set `DISCORD_LINK_FIXER_SIGNING_IDENTITY` to your own stable code-signing identity to avoid changing the signer. Do not borrow someone else's private signing key.
-
-The installer preserves an existing app's bundle identifier, and when a stable signing identity is supplied it verifies the replacement against the previous identity before replacing anything. It backs up the previous app and startup file. It refuses to overwrite a startup job pointing at another target. Signing keys are never distributed.
-
-To uninstall, Quit the helper, unload its LaunchAgent using the label printed by the installer, remove that plist from `~/Library/LaunchAgents`, and move the app to Trash. Revoke its Accessibility permission if desired. Installation backups are in `~/Library/Application Support/Discord Link Fixer`.
+Packaging asks Finder to arrange only the generated image's window. Allow Finder automation if requested. `bash mac/install.sh` remains an advanced local source installer with rollback and a `--check` mode. Set `DISCORD_LINK_FIXER_SIGNING_IDENTITY` to your own stable signing identity when rebuilding. The default ad-hoc signer can require Accessibility approval again after changes. Private signing keys are never distributed.
 
 ## Windows
+
+Windows uses a tray app, not a drag-to-Applications window. Once installed, copy a supported link and press Ctrl-V in Discord. You still press Send. Look in the hidden-icons area near the taskbar clock for Discord Link Fixer; right-click it for Pause, Quit and Test notification. Its desktop shortcut opens or resumes it. There is no main window.
+
+There is not yet a downloadable Windows Setup.exe release. The installation below is source-based and requires Python; you do not need Python commands for ordinary use after installation.
 
 Requires Windows, the .NET Framework compiler at the path used in `windows/install.py`, Python, pywin32 and psutil. Review the installer before running it. From Bash on Windows, with Windows Python available:
 

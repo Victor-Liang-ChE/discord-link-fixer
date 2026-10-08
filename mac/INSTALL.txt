@@ -1,0 +1,23 @@
+Discord Link Fixer
+
+Drag Discord Link Fixer.app onto Applications, then open it from Applications.
+Do not run the copy inside this disk image.
+
+On first launch, the app configures startup at login and crash recovery. It
+appears as a Link menu in the menu bar, not as a normal app window. Normal Quit
+keeps it stopped until the next login; opening the app manually resumes it.
+
+Grant Accessibility permission to Discord Link Fixer in System Settings.
+Allow Notifications if you want health warnings and Discord update notices.
+Copy a supported social-media link and press Command-V in Discord's desktop app.
+Option-Command-V bypasses conversion. You still press Send yourself.
+
+This build is not Apple-notarized. Only open it if you trust the release source.
+If macOS blocks it, review Apple's guidance and the app's source before choosing
+Privacy & Security > Open Anyway in System Settings. Do not disable Gatekeeper.
+https://support.apple.com/en-us/102445
+
+There is no account, Discord token, network access or automatic message sending.
+The helper does not inspect Discord's message fields. Third-party embed services
+are outside its control. See the GitHub README for limits and uninstall details:
+https://github.com/Victor-Liang-ChE/discord-link-fixer

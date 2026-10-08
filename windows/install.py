@@ -99,7 +99,7 @@ else:
     assert '--update-owned' in sys.argv and Path(prior.Definition.Actions.Item(1).Path).resolve() == exe.resolve()
 folder.RegisterTaskDefinition('Discord Link Fixer Recovery', recovery, 6 if '--update-owned' in sys.argv else 2, account, None, 3)
 registered.Run('')
-for attempt in range(40):
+for attempt in range(240):
     if (root / 'running.json').exists():
         state = json.loads((root / 'running.json').read_text())
         if state.get('hookInstalled') and psutil.pid_exists(state.get('pid', 0)) and Path(psutil.Process(state['pid']).exe()).resolve() == exe.resolve():

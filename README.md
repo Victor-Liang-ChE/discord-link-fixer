@@ -16,6 +16,8 @@ The rules support www variants and mobile X/Twitter links. Paths, queries, fragm
 - `mac/main.swift`: complete native Mac helper.
 - `mac/Startup.swift`: first-launch startup registration, ownership checks and rollback.
 - `windows/DiscordLinkFixer.cs`: complete Windows helper and crash supervisor.
+- `windows/ClipboardTransactions.cs`: bounded native clipboard snapshots and locked restoration.
+- `windows/PasteService.cs`: keyboard, clipboard and guarded paste dispatch.
 - `windows/install.py`: compiler, desktop shortcut and startup/recovery task setup.
 - `iphone/Discord Link Fixer.json`: editable Apple Shortcut workflow.
 - `iphone/Discord Link Fixer.shortcut`: signed Shortcut for importing.
@@ -65,11 +67,32 @@ python -m pip install pywin32 psutil
 python windows/install.py
 ```
 
-Keep the folder at a permanent, writable location before installing. The installer builds the executable, runs its self-tests, creates a desktop shortcut, registers login and recovery tasks, and starts the helper in the signed-in desktop session without opening background consoles. Existing tasks are not silently overwritten.
+Keep the folder at a permanent, writable location before installing. The installer validates ownership of both existing tasks and the desktop shortcut before changing anything. It builds and tests a candidate, keeps a backup, registers the login task and starts the helper in the signed-in desktop session without opening a background console. A guarded supervisor handles worker recovery. Updating removes the obsolete minute-by-minute recovery task only after its ownership is verified. Failed updates roll back the artifacts they changed.
 
-Ctrl-V in Discord converts links. Ctrl-Alt-V bypasses conversion. The tray menu can pause or quit. Login resumes it after an intentional quit. To uninstall, quit the helper, remove the Discord Link Fixer and Discord Link Fixer Recovery tasks in Task Scheduler, then remove its desktop shortcut and folder.
+Ctrl-V in the standard Discord desktop installation converts links. Use the tray's Pause command to paste original links. Ctrl-Alt-V is not advertised as an alternate paste command, because Discord does not reliably bind it to Paste. Login or the desktop shortcut resumes the helper after an intentional quit. To uninstall, quit the helper, remove its Discord Link Fixer task in Task Scheduler, then remove its shortcut and folder. Older installations can also have a Discord Link Fixer Recovery task.
 
 For a source update, Quit from the tray first, pull the updated repository, then run `python windows/install.py --rebuild --update-owned`. The ownership check requires the existing tasks to point at this installation. Do not run a second copy from a different folder.
+
+The keyboard callback queues paste work without reading clipboard contents, waiting on providers or doing URL conversion. The clipboard worker accepts bounded Unicode, plain-text, HTML, RTF and Windows clipboard-policy formats as raw bytes. Images, files, unknown custom formats and oversized copies pass through unchanged. Conversion also passes through if the clipboard snapshot is not ready. Queued pastes expire if processing is slow or the foreground window/focused control changes; no focus is forced and no Enter key is injected.
+
+Clipboard replacement and restoration compare ownership while holding the clipboard lock. Repeated pastes renew the restore delay. A busy clipboard postpones normal Quit until the pending original is preserved or a newer user copy supersedes it. An OS shutdown, forced termination or unrecoverable native crash can still prevent restoration; a recovery process cannot reconstruct rich clipboard data that existed only in the terminated process's memory.
+
+From Bash on Windows, run the automated gates without installing or touching the user's clipboard:
+
+```bash
+python windows/verify.py
+python windows/install.py --check --update-owned
+```
+
+The supervisor lifecycle test needs a separate Windows session with no helper already running in it. An SSH session can test a verified candidate while the installed helper remains in the user's desktop session:
+
+```bash
+python windows/test_lifecycle.py /path/to/verified/DiscordLinkFixer.exe
+```
+
+It launches only a copied candidate on a private, non-visible desktop, verifies duplicate rejection, crash recovery and intentional Quit, then stops its own test processes. It refuses to run in a session already owned by a helper.
+
+Native clipboard tests run in a private, non-visible window station with its own clipboard. They do not switch the user's desktop. Verification covers URL boundaries, clipboard races and ownership, repeated pastes, contention, rich-format preservation, size limits, delayed rendering, missing GUI dependencies and installer conflict/rollback behavior under normal and optimized Python. A real unsent Discord draft still needs a user-facing smoke test. Automated checks do not prove that Discord or a third-party embed service will always work.
 
 ## iPhone and iPad
 
@@ -81,7 +104,7 @@ iOS does not allow this to intercept ordinary Discord Paste continuously. Source
 
 The helper makes no network requests, uses no Discord token, reads no conversations and sends no messages. macOS Accessibility is a broad permission; the app uses it to recognize paste shortcuts and check the foreground app. Windows uses a keyboard hook for the same purpose.
 
-Desktop conversion applies to Discord text fields, not only its message composer. Browser Discord, typed links and right-click/menu Paste are not covered. Images and files are left unchanged. The original clipboard is restored after a short delay unless something new was copied. Clipboard-history software can observe the temporary converted text, and delayed paste handling can miss it.
+Desktop conversion applies to Discord text fields, not only its message composer. Browser Discord, typed links and right-click/menu Paste are not covered. Images and files are left unchanged. The original clipboard is restored after a short delay unless something new was copied. Windows temporary conversions opt out of Windows clipboard history and cloud sync. Independent clipboard-history software can still observe them, and delayed paste handling can miss the conversion.
 
 The embed domains are independent third-party services. Their privacy, availability and playback behavior are not controlled by this helper. The helper is not affiliated with Discord or those services.
 
@@ -101,4 +124,4 @@ Both desktop helpers check the version of foreground, supported Discord periodic
 
 These checks cannot prove that Discord consumed a converted paste or that a third-party embed service is working. The helper does not inspect message fields or make network probes. A fully stopped helper cannot display its own warning; startup recovery is a separate safeguard. iPhone/iPad Shortcuts are not an always-on background monitor.
 
-Windows startup progress is recorded in `startup.json` with the worker PID, desktop session, stage and time. Installer timeouts report the stage reached. This contains no keys, clipboard text or messages.
+Windows startup progress is recorded in `startup.json` with the worker PID, desktop session, stage and time. Optional diagnostic write failures do not terminate the helper. Errors record phase, exception type and numeric HRESULT, not exception messages or clipboard contents. `running.json` reports hook installation and maximum callback duration; it explicitly does not certify that a paste was consumed by Discord.

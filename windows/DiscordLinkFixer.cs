@@ -3,25 +3,49 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 
 static class Program {
+    public const int UserQuit = 20, Duplicate = 21, Failed = 1;
+    public static bool WriteState(string name, string value) {
+        try { File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, name), value); return true; }
+        catch { return false; }
+    }
+    public static void Error(string phase, Exception error) {
+        WriteState("last-error.txt", phase + ": " + error.GetType().FullName + " HRESULT=" + error.HResult.ToString("X8")
+            + ". No clipboard, message or exception-message data recorded.");
+    }
     public static void StartupState(string phase) {
-        File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "startup.json"),
+        WriteState("startup.json",
             "{\"pid\":" + Process.GetCurrentProcess().Id + ",\"session\":" + Process.GetCurrentProcess().SessionId
             + ",\"phase\":\"" + phase + "\",\"utc\":\"" + DateTime.UtcNow.ToString("o") + "\"}");
     }
-    static readonly string[,] LinkRules = {
-        {@"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.|mobile\.)?(?:x\.com|twitter\.com)(?=/)", "$1fxtwitter.com"},
-        {@"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.)?instagram\.com(?=/)", "$1kkinstagram.com"},
-        {@"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.)?tiktok\.com(?=/)", "$1tnktok.com"},
-        {@"(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\.)?reddit\.com(?=/)", "$1vxreddit.com"}
-    };
+    static readonly Regex UrlToken = new Regex("(?i)(?<![A-Za-z0-9_./@-])https?://[^\\s<>\\\"'`]+", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
     public static string ConvertLink(string text) {
-        for (int i = 0; i < LinkRules.GetLength(0); i++) text = Regex.Replace(text, LinkRules[i, 0], LinkRules[i, 1], RegexOptions.CultureInvariant);
-        return text;
+        if (text == null || text.Length > 500000) return text;
+        return UrlToken.Replace(text, delegate(Match match) {
+            string token = match.Value;
+            int start = token.IndexOf("://", StringComparison.Ordinal) + 3;
+            int slash = token.IndexOf('/', start);
+            if (slash < 0) return token;
+            string authority = token.Substring(start, slash - start);
+            Uri uri;
+            if (!Uri.TryCreate(token, UriKind.Absolute, out uri) || uri.UserInfo.Length != 0
+                || !String.Equals(uri.Authority, authority, StringComparison.OrdinalIgnoreCase)) return token;
+            string host = authority.ToLowerInvariant();
+            if (host.StartsWith("www.", StringComparison.Ordinal)) host = host.Substring(4);
+            string replacement = null;
+            if (host == "x.com" || host == "twitter.com" || host == "mobile.x.com" || host == "mobile.twitter.com") replacement = "fxtwitter.com";
+            else if (host == "instagram.com") replacement = "kkinstagram.com";
+            else if (host == "tiktok.com") replacement = "tnktok.com";
+            else if (host == "reddit.com") replacement = "vxreddit.com";
+            return replacement == null ? token : token.Substring(0, start) + replacement + token.Substring(slash);
+        });
     }
     public static bool MatchesShortcut(string process, int key, bool control, bool alt, bool windows) {
         return String.Equals(process, "Discord", StringComparison.OrdinalIgnoreCase) && key == 0x56 && control && !alt && !windows;
@@ -29,8 +53,44 @@ static class Program {
     public static bool VersionChanged(string previous, string current) {
         return previous != null && !String.IsNullOrEmpty(current) && previous != current;
     }
+    [DllImport("kernel32.dll")] static extern uint SetErrorMode(uint mode);
     [STAThread] static int Main(string[] args) {
+        try {
+            if (Environment.OSVersion.Platform == PlatformID.Win32NT) SetErrorMode(0x0001 | 0x0002 | 0x8000);
+            return Start(args);
+        } catch (Exception error) { Error("bootstrap", error); return Failed; }
+    }
+    [MethodImpl(MethodImplOptions.NoInlining)] static int Start(string[] args) {
+        if (Array.IndexOf(args, "--bootstrap-check") >= 0) {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                if (assembly.GetName().Name == "System.Windows.Forms" || assembly.GetName().Name == "System.Web.Extensions") return Failed;
+            return 0;
+        }
+        if (Array.IndexOf(args, "--quit") >= 0) {
+            EventWaitHandle request;
+            if (!EventWaitHandle.TryOpenExisting(QuitEventName(), out request)) return Duplicate;
+            using (request) request.Set();
+            return 0;
+        }
+        if (Array.IndexOf(args, "--dependency-check") >= 0) return CheckGuiDependency();
         if (Array.IndexOf(args, "--self-test") >= 0) {
+            return SelfTest();
+        }
+        bool worker = Array.IndexOf(args, "--worker") >= 0;
+        bool acquired;
+        using (Mutex singleton = new Mutex(true, worker ? @"Local\DiscordLinkFixer.v1" : @"Local\DiscordLinkFixer.Supervisor.v1", out acquired)) {
+            if (!acquired) return Duplicate;
+            if (worker) return Worker();
+            string marker = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "quit-until-login");
+            if (Array.IndexOf(args, "--login") >= 0 || Array.IndexOf(args, "--resume") >= 0) {
+                if (File.Exists(marker)) File.Delete(marker);
+            } else if (File.Exists(marker)) return 0;
+            string token = Array.Find(args, delegate(string arg) { return arg.StartsWith("--install-token=", StringComparison.Ordinal); });
+            if (token != null && !Regex.IsMatch(token, @"\A--install-token=[a-f0-9]{32}\z")) return Failed;
+            return Supervise(token);
+        }
+    }
+    [MethodImpl(MethodImplOptions.NoInlining)] static int SelfTest() {
             string sample = "https://x.com/eschatolocation/status/2107617817570709682?s=46";
             string[,] cases = {
                 {sample, sample.Replace("x.com", "fxtwitter.com")},
@@ -57,123 +117,111 @@ static class Program {
                 || MatchesShortcut("Discord", 0x56, false, false, false) || MatchesShortcut("Discord", 0x41, true, false, false)) throw new Exception("Shortcut tests");
             if (VersionChanged(null, "1") || VersionChanged("1", "1") || !VersionChanged("1", "2")) throw new Exception("Update notice tests");
             // No access to the user's clipboard during automated tests.
-            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "self-test.json"), "{\"urlCases\":" + (cases.GetLength(0) + extraCases.Length) + ",\"scopeCases\":6,\"updateCases\":3,\"passed\":true}");
+            int regressions = WindowsTests.Run();
+            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "self-test.json"), "{\"urlCases\":" + (cases.GetLength(0) + extraCases.Length) + ",\"scopeCases\":6,\"updateCases\":3,\"regressions\":" + regressions + ",\"passed\":true}");
             return 0;
-        }
-        if (Array.IndexOf(args, "--worker") < 0) {
-            string marker = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "quit-until-login");
-            if (Array.IndexOf(args, "--login") >= 0) { if (File.Exists(marker)) File.Delete(marker); }
-            else if (File.Exists(marker)) return 0;
-            return Supervise();
-        }
-        bool acquired;
-        using (Mutex singleton = new Mutex(true, @"Local\DiscordLinkFixer.v1", out acquired)) {
-            if (!acquired) return 0;
-            StartupState("visual_styles");
-            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
+    }
+    [MethodImpl(MethodImplOptions.NoInlining)] static int Worker() {
+        StartupState("visual_styles");
+        try {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs eventArgs) { Error("ui", eventArgs.Exception); Application.ExitThread(); };
             Application.EnableVisualStyles();
-            try { using (Helper helper = new Helper()) Application.Run(helper); }
-            catch { File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "last-error.txt"), "Helper exited unexpectedly. Task Scheduler will retry. No message or clipboard data was recorded."); return 1; }
-        }
-        return 0;
+            using (Helper helper = new Helper()) { Application.Run(helper); return helper.QuitRequested ? UserQuit : Failed; }
+        } catch (Exception error) { Error("worker", error); return Failed; }
+    }
+    [MethodImpl(MethodImplOptions.NoInlining)] static int CheckGuiDependency() {
+        return typeof(Application).Assembly.GetName().Version.Major == 4 ? 0 : Failed;
     }
 
-    static int Supervise() {
-        bool acquired;
-        using (Mutex singleton = new Mutex(true, @"Local\DiscordLinkFixer.Supervisor.v1", out acquired)) {
-            if (!acquired) return 0;
+    public static string QuitEventName() {
+        using (var hash = System.Security.Cryptography.SHA256.Create())
+            return @"Local\DiscordLinkFixer.Quit." + BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory).ToUpperInvariant()))).Replace("-", "");
+    }
+    static int Supervise(string token) {
             string root = AppDomain.CurrentDomain.BaseDirectory;
             int failures = 0;
             for (;;) {
                 try {
-                    ProcessStartInfo start = new ProcessStartInfo(Application.ExecutablePath, "--worker");
+                    ProcessStartInfo start = new ProcessStartInfo(Path.Combine(root, "DiscordLinkFixer.exe"), "--worker" + (token == null ? "" : " " + token));
                     start.UseShellExecute = false;
                     start.CreateNoWindow = true;
                     using (Process child = Process.Start(start)) {
-                        File.WriteAllText(Path.Combine(root, "supervisor.json"), "{\"pid\":" + Process.GetCurrentProcess().Id + ",\"workerPid\":" + child.Id + ",\"restarts\":" + failures + "}");
+                        WriteState("supervisor.json", "{\"pid\":" + Process.GetCurrentProcess().Id + ",\"workerPid\":" + child.Id + ",\"restarts\":" + failures + "}");
                         child.WaitForExit();
-                        if (child.ExitCode == 0) {
-                            File.WriteAllText(Path.Combine(root, "quit-until-login"), "Intentional Quit. Login or the desktop shortcut resumes conversion.");
+                        if (child.ExitCode == Duplicate) return 0;
+                        if (child.ExitCode == UserQuit) {
+                            WriteState("quit-until-login", "Intentional Quit. Login or the desktop shortcut resumes conversion.");
                             return 0;
                         }
                     }
-                } catch { /* Retry app-launch failures without logging private data. */ }
+                } catch (Exception error) { Error("supervisor", error); }
                 failures++;
                 Thread.Sleep(Math.Min(60000, 5000 * Math.Min(failures, 12)));
             }
-        }
     }
 }
 
 sealed class Helper : ApplicationContext {
-    delegate IntPtr HookCallback(int code, IntPtr message, IntPtr data);
-    [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWindowsHookEx(int type, HookCallback callback, IntPtr module, uint thread);
-    [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
-    [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr message, IntPtr data);
-    [DllImport("kernel32.dll", CharSet = CharSet.Auto)] static extern IntPtr GetModuleHandle(string name);
-    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
-    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
-    [DllImport("user32.dll")] static extern uint GetClipboardSequenceNumber();
-    readonly HookCallback callback;
     readonly NotifyIcon icon;
-    readonly System.Windows.Forms.Timer restore = new System.Windows.Forms.Timer();
     readonly System.Windows.Forms.Timer refresh = new System.Windows.Forms.Timer();
-    IntPtr hook;
-    DataObject snapshot;
-    uint changedSequence;
+    readonly PasteService service;
+    readonly EventWaitHandle quit = new EventWaitHandle(false, EventResetMode.AutoReset, Program.QuitEventName());
     bool enabled = true;
+    bool quitPending;
     string lastWarning;
-    readonly string statePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "running.json");
+    public bool QuitRequested { get; private set; }
 
     public Helper() {
-        callback = OnKey;
         Program.StartupState("tray_icon");
         icon = new NotifyIcon { Icon = SystemIcons.Application, Text = "Discord Link Fixer", Visible = true };
-        Program.StartupState("tray_menu");
         ContextMenuStrip menu = new ContextMenuStrip();
         ToolStripMenuItem pause = new ToolStripMenuItem("Pause conversion");
-        pause.Click += delegate { enabled = !enabled; pause.Text = enabled ? "Pause conversion" : "Resume conversion"; icon.Text = enabled ? "Discord Link Fixer" : "Discord Link Fixer (paused)"; };
+        pause.Click += delegate { enabled = !enabled; service.Enabled = enabled; pause.Text = enabled ? "Pause conversion" : "Resume conversion"; icon.Text = enabled ? "Discord Link Fixer" : "Discord Link Fixer (paused)"; };
         menu.Items.Add(pause);
-        menu.Items.Add("Ctrl+Alt+V bypasses conversion").Enabled = false;
-        menu.Items.Add("Test notification", null, delegate { icon.ShowBalloonTip(5000, "Discord Link Fixer", "Notification test. This does not test Discord paste compatibility.", ToolTipIcon.Info); });
-        menu.Items.Add("Quit until next login", null, delegate { ExitThread(); });
+        menu.Items.Add("Pause to paste original links").Enabled = false;
+        menu.Items.Add("Test notification", null, delegate { Notify("Notification test. This does not test Discord paste compatibility.", ToolTipIcon.Info); });
+        menu.Items.Add("Quit until next login", null, delegate {
+            quitPending = true; service.BeginStop();
+        });
         icon.ContextMenuStrip = menu;
-        restore.Interval = 1000;
-        restore.Tick += delegate { RestoreClipboard(); };
-        refresh.Interval = 60000;
-        refresh.Tick += delegate {
-            try {
-                InstallHook();
-                lastWarning = null;
-                WriteStatus(true);
-            } catch {
-                Warn("Keyboard hook refresh failed. Link conversion may be unavailable; reopen the helper.");
-                WriteStatus(false);
-            }
-            CheckDiscordVersion();
-        };
+        service = new PasteService();
         Program.StartupState("install_hook");
-        InstallHook();
+        service.Start();
+        refresh.Interval = 1000;
+        refresh.Tick += delegate {
+            if (quit.WaitOne(0)) { quitPending = true; service.BeginStop(); }
+            if (quitPending && service.Stopped) { QuitRequested = true; ExitThread(); return; }
+            if (!quitPending && service.Fatal) { service.BeginStop(); ExitThread(); return; }
+            if (Interlocked.Exchange(ref service.CancelledPastes, 0) > 0) Notify("Paste cancelled after focus changed or processing timed out. Try Ctrl-V again.", ToolTipIcon.Warning);
+            bool ready = service.HookInstalled;
+            if (!ready && lastWarning != "hook") { lastWarning = "hook"; Notify("Keyboard hook unavailable. Ordinary paste is unchanged; recovery is being attempted.", ToolTipIcon.Warning); }
+            else if (ready) lastWarning = null;
+            service.RefreshProcesses();
+            if (DateTime.UtcNow.Second % 15 == 0) WriteStatus();
+            if (DateTime.UtcNow.Second == 0) CheckDiscordVersion();
+        };
         refresh.Start();
-        WriteStatus(true);
+        WriteStatus();
         Program.StartupState("ready");
     }
 
-    void WriteStatus(bool installed) {
-        File.WriteAllText(statePath, "{\"pid\":" + Process.GetCurrentProcess().Id + ",\"session\":" + Process.GetCurrentProcess().SessionId + ",\"hookInstalled\":" + (installed ? "true" : "false") + "}");
+    void Notify(string message, ToolTipIcon kind) {
+        try { icon.ShowBalloonTip(5000, "Discord Link Fixer", message, kind); }
+        catch (Exception error) { Program.Error("notification", error); }
     }
 
-    void Warn(string message) {
-        if (lastWarning == message) return;
-        lastWarning = message;
-        icon.ShowBalloonTip(5000, "Discord Link Fixer", message, ToolTipIcon.Warning);
+    void WriteStatus() {
+        Program.WriteState("running.json", "{\"pid\":" + Process.GetCurrentProcess().Id + ",\"session\":" + Process.GetCurrentProcess().SessionId
+            + ",\"hookInstalled\":" + (service.HookInstalled ? "true" : "false") + ",\"clipboardPending\":" + (service.ClipboardPending ? "true" : "false")
+            + ",\"maximumHookMs\":" + (Interlocked.Read(ref service.MaximumHookTicks) * 1000.0 / Stopwatch.Frequency).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)
+            + ",\"pasteVerified\":false}");
     }
 
     void CheckDiscordVersion() {
         try {
             uint pid;
-            GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+            PasteService.GetWindowThreadProcessId(PasteService.GetForegroundWindow(), out pid);
             using (Process foreground = Process.GetProcessById((int)pid)) {
                 if (!String.Equals(foreground.ProcessName, "Discord", StringComparison.OrdinalIgnoreCase)) return;
                 string version = FileVersionInfo.GetVersionInfo(foreground.MainModule.FileName).ProductVersion;
@@ -181,75 +229,20 @@ sealed class Helper : ApplicationContext {
                 string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "discord-version.txt");
                 string previous = File.Exists(path) ? File.ReadAllText(path) : null;
                 if (previous == version) return;
-                File.WriteAllText(path, version);
-                if (Program.VersionChanged(previous, version))
-                    icon.ShowBalloonTip(5000, "Discord Link Fixer", "Discord updated. Paste compatibility has not been verified. Try a supported link in an unsent draft; do not press Send.", ToolTipIcon.Info);
+                Program.WriteState("discord-version.txt", version);
+                if (Program.VersionChanged(previous, version)) Notify("Discord updated. Try a supported link in an unsent draft; do not press Send.", ToolTipIcon.Info);
             }
-        } catch { /* Version metadata is optional; it must not interrupt conversion. */ }
-    }
-
-    void InstallHook() {
-        IntPtr created = SetWindowsHookEx(13, callback, GetModuleHandle(null), 0);
-        if (created == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-        IntPtr old = hook;
-        hook = created;
-        if (old != IntPtr.Zero) UnhookWindowsHookEx(old);
-    }
-
-    static bool Down(int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; }
-    IntPtr OnKey(int code, IntPtr message, IntPtr data) {
-        if (code >= 0 && enabled && (message == (IntPtr)0x100 || message == (IntPtr)0x104) && Marshal.ReadInt32(data) == 0x56
-            && Down(0x11) && !Down(0x12) && !Down(0x5B) && !Down(0x5C)) {
-            try {
-                uint pid;
-                GetWindowThreadProcessId(GetForegroundWindow(), out pid);
-                using (Process foreground = Process.GetProcessById((int)pid)) {
-                    if (Program.MatchesShortcut(foreground.ProcessName, 0x56, true, false, false)) PreparePaste();
-                }
-            } catch { /* A busy clipboard or disappearing foreground app leaves the ordinary paste untouched. */ }
-        }
-        return CallNextHookEx(hook, code, message, data);
-    }
-
-    void PreparePaste() {
-        if (!Clipboard.ContainsText(TextDataFormat.UnicodeText) || Clipboard.ContainsImage() || Clipboard.ContainsFileDropList()) return;
-        string text = Clipboard.GetText(TextDataFormat.UnicodeText);
-        if (text.Length > 500000) return;
-        string converted = Program.ConvertLink(text);
-        if (converted == text) return;
-        IDataObject data = Clipboard.GetDataObject();
-        DataObject saved = new DataObject();
-        foreach (string format in data.GetFormats(false)) {
-            object value = data.GetData(format, false);
-            MemoryStream stream = value as MemoryStream;
-            saved.SetData(format, false, stream == null ? value : new MemoryStream(stream.ToArray()));
-        }
-        // Restore a prior conversion before starting another, but never overwrite a new copy.
-        RestoreClipboard();
-        snapshot = saved;
-        Clipboard.SetDataObject(converted, true, 1, 10);
-        changedSequence = GetClipboardSequenceNumber();
-        restore.Start();
-    }
-
-    void RestoreClipboard() {
-        restore.Stop();
-        if (snapshot != null && GetClipboardSequenceNumber() == changedSequence) {
-            try { Clipboard.SetDataObject(snapshot, true, 1, 10); }
-            catch { restore.Start(); return; }
-        }
-        snapshot = null;
+        } catch { /* Optional metadata never interrupts paste. */ }
     }
 
     protected override void ExitThreadCore() {
-        RestoreClipboard();
         refresh.Stop();
-        if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook);
+        service.Stop();
         icon.Visible = false;
         icon.Dispose();
-        restore.Dispose();
         refresh.Dispose();
-        File.WriteAllText(statePath, "{\"stoppedNormally\":true}");
+        quit.Dispose();
+        Program.WriteState("running.json", "{\"stoppedNormally\":" + (QuitRequested ? "true" : "false") + "}");
         base.ExitThreadCore();
     }
 }

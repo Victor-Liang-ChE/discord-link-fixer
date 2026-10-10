@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-10",
+  "platform": "Windows, .NET Framework 4.x, Python 3.12.9",
+  "gates": {
+    "pureChecks": { "count": 101, "passed": true },
+    "nativeClipboardChecks": { "count": 31, "passed": true },
+    "installerTests": { "count": 16, "passed": true },
+    "optimizedPythonInstallerTests": { "count": 16, "passed": true },
+    "bootstrapWithoutFormsLoaded": { "exitCode": 0, "passed": true },
+    "missingGuiBootstrap": { "exitCode": 0, "passed": true },
+    "missingGuiDependency": { "expectedExitCode": 1, "actualExitCode": 1, "sanitizedErrorVerified": true },
+    "nativeSchedulerScalarToken": { "passed": true, "temporaryTaskRemoved": true },
+    "isolatedLifecycle": {
+      "passed": true,
+      "duplicateExitCode": 21,
+      "crashRecovered": true,
+      "crashRecoverySeconds": 8.656,
+      "intentionalQuitRecorded": true,
+      "intentionalQuitRespected": true,
+      "privateDesktopUsed": true,
+      "testProcessesStopped": true
+    },
+    "liveDeployment": {
+      "gracefulHelperOnlyRestart": true,
+      "interactiveSession": true,
+      "hookInstalled": true,
+      "clipboardPendingAtReadiness": false,
+      "obsoletePeriodicRecoveryTaskRemoved": true,
+      "sourceHashesMatchVerifiedCandidate": true,
+      "installedExecutableSha256": "6642ef1ebbab1beb24dfb7bfddc0d9d14f817105380503185058e1675a18e911"
+    }
+  },
+  "candidateExecutableSha256": "77ca825ead5ac6575b4530708cab2fcc6619d4f31c835b09d783acbc35a3afc0",
+  "sourceHashes": {
+    "windows/DiscordLinkFixer.cs": "32fc978d24d25ecc540535883e2013d3cfa2076d0e93f3fe5918f0820b8865ef",
+    "windows/ClipboardTransactions.cs": "ac07cf4dd88454db55d1f6fc745400ea54520c897e49361c75064cd2e52ad5aa",
+    "windows/PasteService.cs": "7157881fa1322c2b34050de8914164ab0738da3f71dc455ff928f4d003fad2d9",
+    "windows/WindowsTests.cs": "cce56ec788bc5a2aae2526fdd4642afdb52e18d0d5d9f07ec6d70667bd65a300",
+    "windows/install.py": "f9cd1f515b7ce95a4e2ede90d5a16f7b7dc8827b24a71f6332390143ac418a84",
+    "windows/verify.py": "5a9a5b8ee0d4360179ba1b34f5f74d0f8b8ba0d5a11dfd85e2bf4b7a04790402",
+    "windows/NativeClipboardTests.cs": "09802bd6dcd4d8191f6aefd9a6f18439515256feabb0c71c7504f8cf05425382",
+    "windows/test_install.py": "ca82394e1f03aeed4d4eab3ca371cf3057ea04143cbddc17a1cf895abc32bc8f",
+    "windows/test_lifecycle.py": "67438b9426dfcbc5c02ca3eaa1002670dc549422a11f2a3c448855df3cbbc760",
+    "link-tests.json": "6cf0b941d8f557d1e2569f38001e62f27bc74ca243f85c429b2165e7639a0b69"
+  },
+  "safety": {
+    "aspenStopped": false,
+    "wslStopped": false,
+    "userClipboardTouchedByAutomatedTests": false,
+    "userDesktopSwitched": false,
+    "unrelatedProcessesStopped": false
+  },
+  "limitations": [
+    "The unsent Discord draft smoke test is blocked by the user's frozen or slow PC. Hook installation is not proof that Discord consumed a converted paste.",
+    "Forced termination, native fatal errors or OS shutdown can lose a pending rich original stored only in process memory.",
+    "Unknown custom clipboard formats, images, files and oversized snapshots deliberately pass through without conversion.",
+    "No third-party embed availability or playback guarantee is made.",
+    "Candidate and deployed binaries are separate compilations of the same verified runtime sources; both pass their pure self-tests. Native clipboard and isolated lifecycle gates ran against the candidate sources and binary."
+  ]
+}

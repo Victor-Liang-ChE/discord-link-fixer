@@ -61,6 +61,9 @@ static class Program {
         } catch (Exception error) { Error("bootstrap", error); return Failed; }
     }
     [MethodImpl(MethodImplOptions.NoInlining)] static int Start(string[] args) {
+        if (Array.IndexOf(args, "--steam-check") >= 0) {
+            return SteamCheck();
+        }
         if (Array.IndexOf(args, "--bootstrap-check") >= 0) {
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                 if (assembly.GetName().Name == "System.Windows.Forms" || assembly.GetName().Name == "System.Web.Extensions") return Failed;
@@ -90,6 +93,18 @@ static class Program {
             return Supervise(token);
         }
     }
+    [MethodImpl(MethodImplOptions.NoInlining)] static int SteamCheck() {
+        var results = new List<object>();
+        foreach (string id in new[] { "620", "1203620" }) {
+            var diagnostics = new List<string>(); SteamTrailers.Diagnostic = diagnostics.Add;
+            var watch = Stopwatch.StartNew(); string video = SteamTrailers.Lookup(id);
+            results.Add(new { appID = id, video = video, seconds = watch.Elapsed.TotalSeconds, diagnostics = diagnostics });
+        }
+        SteamTrailers.Diagnostic = null;
+        File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "steam-check.json"),
+            new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(results));
+        return 0;
+    }
     [MethodImpl(MethodImplOptions.NoInlining)] static int SelfTest() {
             string sample = "https://x.com/eschatolocation/status/2107617817570709682?s=46";
             string[,] cases = {
@@ -118,6 +133,7 @@ static class Program {
             if (VersionChanged(null, "1") || VersionChanged("1", "1") || !VersionChanged("1", "2")) throw new Exception("Update notice tests");
             // No access to the user's clipboard during automated tests.
             int regressions = WindowsTests.Run();
+            regressions += SteamTests.Run();
             File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "self-test.json"), "{\"urlCases\":" + (cases.GetLength(0) + extraCases.Length) + ",\"scopeCases\":6,\"updateCases\":3,\"regressions\":" + regressions + ",\"passed\":true}");
             return 0;
     }

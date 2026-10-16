@@ -21,13 +21,17 @@ interface IClipboardStore {
 // The store owns the clipboard lock across each check/write. This class owns the restore lifecycle.
 sealed class ClipboardTransaction {
     readonly IClipboardStore store;
+    readonly Func<string, string> convert;
+    readonly Action<string> prepare;
     ClipboardSnapshot candidate, original;
     Dictionary<uint, byte[]> replacement;
     uint changed;
     long deadline;
     public bool Pending { get { return original != null; } }
     public uint ReadySequence { get { return original != null ? store.Sequence : candidate == null ? 0 : candidate.Sequence; } }
-    public ClipboardTransaction(IClipboardStore store) { this.store = store; }
+    public ClipboardTransaction(IClipboardStore store, Func<string, string> convert = null, Action<string> prepare = null) {
+        this.store = store; this.convert = convert ?? Program.ConvertLink; this.prepare = prepare;
+    }
 
     public void Prepare() {
         if (original != null && store.Owns(changed)) return;
@@ -35,7 +39,7 @@ sealed class ClipboardTransaction {
         ClipboardSnapshot snapshot = store.Read();
         if (snapshot == null) return;
         string converted;
-        try { converted = Program.ConvertLink(snapshot.Text); }
+        try { if (prepare != null) prepare(snapshot.Text); converted = convert(snapshot.Text); }
         catch (System.Text.RegularExpressions.RegexMatchTimeoutException) { return; }
         if (converted == snapshot.Text) return;
         candidate = snapshot;

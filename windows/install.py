@@ -11,7 +11,7 @@ import uuid
 
 TASK = 'Discord Link Fixer'
 LEGACY_RECOVERY = 'Discord Link Fixer Recovery'
-SOURCES = ('DiscordLinkFixer.cs', 'ClipboardTransactions.cs', 'PasteService.cs', 'WindowsTests.cs')
+SOURCES = ('DiscordLinkFixer.cs', 'ClipboardTransactions.cs', 'PasteService.cs', 'SteamTrailers.cs', 'SteamTests.cs', 'WindowsTests.cs')
 
 
 def require(condition, message):

@@ -63,6 +63,11 @@ sealed class PasteService {
         discordProcesses = ids.ToArray();
     }
 
+    bool SteamEligible() {
+        uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+        return Enabled && !stopping && Array.IndexOf(discordProcesses, (int)pid) >= 0;
+    }
+
     public void Start() {
         RefreshProcesses();
         Thread clipboard = new Thread(delegate() {
@@ -154,10 +159,19 @@ sealed class PasteService {
         readonly ClipboardTransaction transaction;
         readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
         bool dirty = true;
+        int steamRevision;
+        bool steamEligible;
+        bool steamRetry;
+        long nextSteamRetry;
         public ClipboardWindow(PasteService service) {
             this.service = service;
             CreateHandle(new CreateParams { Parent = (IntPtr)(-3) });
-            transaction = new ClipboardTransaction(new NativeClipboard(Handle));
+            transaction = new ClipboardTransaction(new NativeClipboard(Handle),
+                delegate(string text) { return SteamTrailers.Shared.Converted(Program.ConvertLink(text)); },
+                delegate(string text) {
+                    steamRetry = service.SteamEligible() && !SteamTrailers.Shared.Known(text);
+                    if (steamRetry) SteamTrailers.Shared.Warm(text);
+                });
             if (!AddClipboardFormatListener(Handle)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             timer.Interval = 25; timer.Tick += delegate { Pump(); }; timer.Start();
         }
@@ -181,6 +195,12 @@ sealed class PasteService {
                 bool wasPending = transaction.Pending;
                 transaction.Restore(Now, false);
                 if (wasPending && !transaction.Pending) dirty = true;
+                int revision = SteamTrailers.Shared.Revision;
+                if (steamRevision != revision) { steamRevision = revision; dirty = true; }
+                bool eligible = service.SteamEligible();
+                if (eligible && !steamEligible) dirty = true;
+                steamEligible = eligible;
+                if (eligible && steamRetry && Now >= nextSteamRetry) { nextSteamRetry = Now + 250; dirty = true; }
                 if (dirty && !transaction.Pending) { dirty = false; transaction.Prepare(); }
                 service.readySequence = transaction.ReadySequence;
                 service.ClipboardPending = transaction.Pending;

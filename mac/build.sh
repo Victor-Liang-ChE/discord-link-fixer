@@ -14,7 +14,7 @@ if [ -n "${DISCORD_LINK_FIXER_BUNDLE_IDENTIFIER:-}" ]; then
   /usr/bin/plutil -replace CFBundleIdentifier -string "$DISCORD_LINK_FIXER_BUNDLE_IDENTIFIER" "$task_app/Contents/Info.plist"
 fi
 for task_arch in arm64 x86_64; do
-  /usr/bin/swiftc -target "$task_arch-apple-macos13.0" "$task_root/mac/main.swift" "$task_root/mac/Startup.swift" -o "$task_stage/DiscordLinkFixer-$task_arch" -framework AppKit -framework ApplicationServices -framework UserNotifications
+  /usr/bin/swiftc -target "$task_arch-apple-macos13.0" "$task_root/mac/main.swift" "$task_root/mac/Startup.swift" "$task_root/mac/SteamTrailers.swift" "$task_root/mac/SteamTests.swift" -o "$task_stage/DiscordLinkFixer-$task_arch" -framework AppKit -framework ApplicationServices -framework UserNotifications
 done
 /usr/bin/lipo -create "$task_stage/DiscordLinkFixer-arm64" "$task_stage/DiscordLinkFixer-x86_64" -output "$task_app/Contents/MacOS/DiscordLinkFixer"
 DISCORD_LINK_FIXER_TESTS="$task_root/link-tests.json" "$task_app/Contents/MacOS/DiscordLinkFixer" --self-test

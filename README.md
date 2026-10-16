@@ -11,10 +11,35 @@ Replace supported social-media link domains when pasting into the Discord deskto
 
 The rules support www variants and mobile X/Twitter links. Paths, queries, fragments and surrounding text are preserved. Short-link hosts such as vm.tiktok.com are not supported.
 
+### Steam trailers
+
+Current source builds also prepare a trailer when the clipboard contains only
+an HTTPS `store.steampowered.com/app/...` link and Discord is foreground. Once
+the background lookup succeeds, ordinary Paste inserts the first trailer's
+direct Steam video URL followed by the original store link. You still press
+Send. This is a video link, not VanchiBot's rich card or trailer-arrow controls.
+The published Mac v1.1.0 download predates this feature; use the source updater
+below for this version.
+
+Paste never waits for the network. An immediate paste before preparation,
+offline lookup, missing trailer, unsupported streaming-only trailer or failed
+video check leaves the Steam link unchanged. The first listed trailer is used;
+a later trailer is not silently substituted. Enshrouded currently falls back
+because its first trailer has no compatible legacy MP4 copy. Discord can still
+reject or change playback after a successful Steam check; the store link is
+always retained.
+
+Only a standalone store link is eligible. Text around it, multiple links,
+angle-bracket suppression, other Steam URL types and non-HTTPS links pass
+through unchanged. The existing Pause and platform-specific bypass behavior
+still applies. No `@name shared:` text is added by a clipboard helper: the
+message is already posted under your own Discord account.
+
 ## Source
 
 - `mac/main.swift`: complete native Mac helper.
 - `mac/Startup.swift`: first-launch startup registration, ownership checks and rollback.
+- `mac/SteamTrailers.swift` and `windows/SteamTrailers.cs`: bounded background Steam lookup and in-memory trailer cache.
 - `windows/DiscordLinkFixer.cs`: complete Windows helper and crash supervisor.
 - `windows/ClipboardTransactions.cs`: bounded native clipboard snapshots and locked restoration.
 - `windows/PasteService.cs`: keyboard, clipboard and guarded paste dispatch.
@@ -102,7 +127,20 @@ iOS does not allow this to intercept ordinary Discord Paste continuously. Source
 
 ## Privacy and limitations
 
-The helper makes no network requests, uses no Discord token, reads no conversations and sends no messages. macOS Accessibility is a broad permission; the app uses it to recognize paste shortcuts and check the foreground app. Windows uses a keyboard hook for the same purpose.
+Social-media domain rewriting makes no network requests. Steam trailer preparation
+sends only the app ID to Steam's public metadata endpoint and checks a small MP4
+prefix on Steam's CDN. Clipboard text, query parameters and fragments are never
+sent. Requests do not follow redirects or use stored cookies/credentials. Each
+lookup has a shared four-second deadline and a bounded metadata response; only
+one lookup runs at a time. The in-memory cache holds at most 128 app IDs, with
+successful results cached for an hour and failures for fifteen minutes. There
+is no video storage, conversion, custom server, API key or paid service. Steam
+receives your device's IP address when queried.
+
+The helper uses no Discord token, reads no conversations and sends no messages.
+macOS Accessibility is a broad permission; the app uses it to recognize paste
+shortcuts and check the foreground app. Windows uses a keyboard hook for the
+same purpose.
 
 Desktop conversion applies to Discord text fields, not only its message composer. Browser Discord, typed links and right-click/menu Paste are not covered. Images and files are left unchanged. The original clipboard is restored after a short delay unless something new was copied. Windows temporary conversions opt out of Windows clipboard history and cloud sync. Independent clipboard-history software can still observe them, and delayed paste handling can miss the conversion.
 
@@ -122,6 +160,6 @@ Mac notifications warn when Accessibility permission or the keyboard event tap i
 
 Both desktop helpers check the version of foreground, supported Discord periodically. The first observed version is a silent baseline. A later change produces an informational notice asking you to try a supported link in an unsent draft. An update is not reported as a confirmed failure.
 
-These checks cannot prove that Discord consumed a converted paste or that a third-party embed service is working. The helper does not inspect message fields or make network probes. A fully stopped helper cannot display its own warning; startup recovery is a separate safeguard. iPhone/iPad Shortcuts are not an always-on background monitor.
+These checks cannot prove that Discord consumed a converted paste or that a third-party embed service is working. The helper does not inspect message fields. Steam's small header probe does not certify Discord playback. A fully stopped helper cannot display its own warning; startup recovery is a separate safeguard. iPhone/iPad Shortcuts are not an always-on background monitor. The iPhone Shortcut's social rules are unchanged and do not perform Steam trailer lookup.
 
 Windows startup progress is recorded in `startup.json` with the worker PID, desktop session, stage and time. Optional diagnostic write failures do not terminate the helper. Errors record phase, exception type and numeric HRESULT, not exception messages or clipboard contents. `running.json` reports hook installation and maximum callback duration; it explicitly does not certify that a paste was consumed by Discord.

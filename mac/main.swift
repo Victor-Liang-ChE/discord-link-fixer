@@ -2,6 +2,16 @@ import AppKit
 import ApplicationServices
 import UserNotifications
 
+if CommandLine.arguments.contains("--steam-check") {
+    let results = ["620", "1203620"].map { id -> [String: Any] in
+        let started = Date()
+        let video = SteamTrailers.lookup(id)
+        return ["appID": id, "video": video as Any? ?? NSNull(), "seconds": Date().timeIntervalSince(started)]
+    }
+    print(String(data: try! JSONSerialization.data(withJSONObject: results, options: [.sortedKeys]), encoding: .utf8)!)
+    exit(0)
+}
+
 func healthWarning(enabled: Bool, trusted: Bool, hookActive: Bool) -> String? {
     if !enabled { return nil }
     if !trusted { return "Accessibility permission is missing. Link conversion is inactive." }
@@ -33,6 +43,7 @@ func shouldConvert(bundle: String?, key: Int64, flags: CGEventFlags) -> Bool {
 
 if CommandLine.arguments.contains("--self-test") {
     try Startup.selfTest()
+    try steamTests()
     let sample = "https://x.com/eschatolocation/status/2107617817570709682?s=46"
     let cases: [(String, String)] = [
         (sample, sample.replacingOccurrences(of: "x.com", with: "fxtwitter.com")),
@@ -117,6 +128,8 @@ final class Helper: NSObject, NSApplicationDelegate {
     var notificationsAllowed = false
     var lastWarning: String?
     var healthTicks = 0
+    var steamClipboardCount = -1
+    var steamTimer: Timer?
     let stateItem = NSMenuItem(title: "Waiting for Accessibility approval", action: nil, keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -136,6 +149,18 @@ final class Helper: NSObject, NSApplicationDelegate {
         // Permission is requested only from the user's menu action, never on a
         // startup or recovery loop. A denied permission must not reopen Settings.
         writeStatus()
+        steamTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self, self.enabled, self.pending == nil,
+                  NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.hnc.Discord" else { return }
+            let board = NSPasteboard.general
+            let count = board.changeCount
+            guard count != self.steamClipboardCount else { return }
+            self.steamClipboardCount = count
+            guard let items = board.pasteboardItems, items.count == 1,
+                  !items[0].types.contains(.fileURL), !items[0].types.contains(.png), !items[0].types.contains(.tiff),
+                  let text = board.string(forType: .string), board.changeCount == count else { return }
+            if !SteamTrailers.shared.warm(text) && !SteamTrailers.shared.known(text) { self.steamClipboardCount = -1 }
+        }
         if !UserDefaults.standard.bool(forKey: "notificationPermissionRequested") {
             notificationPermission()
         } else {
@@ -245,7 +270,8 @@ final class Helper: NSObject, NSApplicationDelegate {
         guard let items = board.pasteboardItems, items.count == 1,
             !items[0].types.contains(.fileURL), !items[0].types.contains(.png), !items[0].types.contains(.tiff),
             let text = board.string(forType: .string), text.utf8.count < 1_000_000 else { return }
-        let converted = convert(text)
+        let converted = SteamTrailers.shared.converted(convert(text))
+        SteamTrailers.shared.warm(text)
         guard converted != text else { return }
         let snapshot = clipboardSnapshot(board)
         board.clearContents()
@@ -280,6 +306,7 @@ final class Helper: NSObject, NSApplicationDelegate {
         if let (snapshot, count) = pending { restoreClipboard(snapshot, board: .general, expectedCount: count) }
         if let tap { CFMachPortInvalidate(tap) }
         timer?.invalidate()
+        steamTimer?.invalidate()
     }
 }
 

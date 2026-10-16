@@ -32,7 +32,9 @@ Live Portal 2 URL:
 `https://cdn.fastly.steamstatic.com/steam/apps/5787/movie480.mp4`.
 The same Steam URL played through Discord during VanchiBot validation earlier
 today. That does not prove a new desktop-helper paste was consumed by Discord.
-Unsent-draft checks of the updated installed helpers remain pending activation.
+At pre-activation review, unsent-draft checks of the installed helpers were
+still pending. Activation results below distinguish actual draft checks from
+private-clipboard and source-availability checks.
 
 Windows initially failed HTTPS negotiation because this Framework-targeted
 executable inherited an obsolete TLS default. Steam lookup now uses TLS 1.2,
@@ -47,11 +49,10 @@ raw exception messages. Normal lookup failures are silent.
 | windows/SteamTrailers.cs | ec22a271de89c180d006bfc645cb73277b7d61a2041c61634a8275e20cde8696 |
 | windows/SteamTests.cs | 8970e51550242bbe46bbcdb4b69bc8bd6559f97679fb10af1d59978c04895e2f |
 
-## Activation pending owner approval
+## Pre-activation inventory
 
-No installed helper was stopped or replaced. The owner has been asked whether
-to quit/relaunch only these two helpers after testing. Do not treat selection
-of the feature option as an answer to that later restart question.
+At this inventory, no installed helper had been stopped or replaced. The owner
+subsequently explicitly approved updating and relaunching only these helpers.
 
 Mac checkout: `/Users/victorliang/discord-link-fixer`.
 Installed app: `/Users/victorliang/Applications/Discord Link Fixer.app`.
@@ -78,3 +79,67 @@ Repository had an unrelated deleted `iphone/Discord Link Fixer.shortcut` at
 entry. Leave that deletion untouched and unstaged. No tests touched the user's
 clipboard, sent messages, switched the Windows desktop or stopped unrelated
 processes. No agent-owned persistent process remains running.
+
+## Activated after explicit approval
+
+Both installations now run the source update from commit
+`9cf8a55276eeb3d43316f1c4ea909142fdf86ff2`. No runtime-source changes were
+needed during activation. Only the two approved helpers were quit/relaunched.
+Discord, VanchiBot, Oracle, other servers and unrelated processes were not
+stopped or restarted.
+
+| Installed verification | Mac | Windows |
+| --- | --- | --- |
+| Current helper worker PID | 95701 | 13640 |
+| Previous helper PIDs | 75561 | 15296 and 30392 |
+| Active permission/hook | Accessibility approved, active | Session 1, hook installed, ready |
+| Installed self-tests | Steam 50; URLs 30; scope 7; health 7 | Regressions 120; URLs 30; scope 6; updates 3 |
+| Startup recovery retained | Owned launchd job | Owned login task and supervisor |
+
+Mac gracefully exited using NSRunningApplication.terminate after exact bundle
+path validation. The source installer preserved the bundle ID, signer and
+owned startup label. The new designated requirement is identical to the old
+one, and strict all-architecture signature verification passed. Installed
+executable matches the tested built executable, SHA-256
+`db1a52ecaed405749576c9f720247f4697d87c6f56c99a915bc2f580716adf00`.
+
+Mac backups:
+`/Users/victorliang/Library/Application Support/Discord Link Fixer/backup-steam-20261016T142341Z.wSoNbDp6`
+and the installer's previous app/plist under
+`/Users/victorliang/Library/Application Support/Discord Link Fixer/install.WGgZOm7M`.
+
+Windows activation revalidated exact baseline and candidate hashes, owned
+scheduled tasks and shortcut, then built and self-tested a final candidate.
+A new temporary InteractiveToken task invoked only this installation's
+`--quit`; its identity was rechecked and the temporary task removed. Both old
+helper processes exited without force termination. Source/executable backups
+were verified before replacement. The existing transactional installer
+activated the exact tested candidate, and all installed source hashes matched.
+Installed executable SHA-256:
+`740a1059b62cd1c7332f793241d9aea001edd45aab0146821f31cf02d92463fb`.
+
+Windows backups:
+`C:/Users/victo/AppData/Local/Discord Link Fixer/backup-steam-20261016T142340Z`
+and `C:/Users/victo/AppData/Local/Discord Link Fixer/install-backup-6y4y6xtf`.
+Full machine-local receipt: `steam-activation.json` in the installed root.
+Activation script retained in its verified staging directory:
+`activate-steam-windows-20261016.py`.
+
+An actual Mac unsent draft test used ordinary Command-V. Steam requests from
+the Mac timed out during this final check, independently reproduced by curl.
+The helper correctly pasted the unmodified Steam URL without waiting. Only
+the agent's unsent test text was cleared, and the original clipboard's complete
+snapshot was restored from memory under a unique clipboard ownership marker.
+No test message was sent. Positive enhanced pasting in the live Mac composer
+was therefore not verified in this run. Earlier live source checks and the
+Windows pre-install check found Portal 2's MP4. The final installed Windows
+executable also passed all self-tests and returned Portal 2's MP4, while
+Enshrouded correctly fell back. Its worker stayed ready with no pending
+clipboard replacement. The Windows interactive draft was not tested; native
+tests used a private clipboard.
+
+Known compatibility remains narrow. A separate current-store sample in the
+VanchiBot workspace found legacy MP4s for only four of twenty top-seller app
+IDs; none of twenty newest-release app IDs was confirmed, including two
+inconclusive timeouts. This activation does not add streaming conversion or
+broader modern-trailer support. Failed preparation retains normal Steam links.

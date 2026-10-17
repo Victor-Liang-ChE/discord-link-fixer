@@ -38,6 +38,10 @@ static class WindowsTests {
 
     public static int Run() {
         count = 0;
+        var login = Program.LoginTaskCommand();
+        Check(System.IO.Path.IsPathRooted(login.FileName) && System.IO.Path.GetFileName(login.FileName) == "schtasks.exe", "absolute task launcher");
+        Check(login.Arguments == "/Run /TN \"Discord Link Fixer\"", "only owned task requested");
+        Check(!login.UseShellExecute && login.CreateNoWindow && login.WindowStyle == System.Diagnostics.ProcessWindowStyle.Hidden, "startup launches without focus or console");
         string[,] urls = {
             {"https://example.com/?redirect=https://x.com/user/status/123", "https://example.com/?redirect=https://x.com/user/status/123"},
             {"https://example.com/#https://x.com/user/status/123", "https://example.com/#https://x.com/user/status/123"},

@@ -29,9 +29,12 @@ def preflight(backend, exe, update, require_stopped=True):
     shortcut = backend.read_shortcut()
     if shortcut is not None:
         require(update and backend.owns_shortcut(shortcut, exe), 'Desktop shortcut ownership check failed.')
+    startup = backend.read_startup()
+    if startup is not None:
+        require(update and backend.owns_startup(startup, exe), 'Startup shortcut ownership check failed.')
     if require_stopped:
         require(not backend.running(exe), 'Helper still running. Quit the verified helper first; no process was stopped.')
-    return tasks, shortcut
+    return tasks, shortcut, startup
 
 
 def build(root, destination):
@@ -58,13 +61,13 @@ def build(root, destination):
 def install(root, backend, update=False, check=False, builder=build):
     root = Path(root).resolve()
     exe = root / 'DiscordLinkFixer.exe'
-    tasks, shortcut = preflight(backend, exe, update, not check)
+    tasks, shortcut, startup = preflight(backend, exe, update, not check)
     with tempfile.TemporaryDirectory(prefix='discord-link-fixer-build-') as directory:
         candidate, tests = builder(root, Path(directory))
         if check:
             return {'checked': True, 'installed': False, 'tests': tests}
-        current_tasks, current_shortcut = preflight(backend, exe, update)
-        require(tasks == current_tasks and shortcut == current_shortcut,
+        current_tasks, current_shortcut, current_startup = preflight(backend, exe, update)
+        require(tasks == current_tasks and shortcut == current_shortcut and startup == current_startup,
                 'Installation artifacts changed during validation; nothing installed.')
         backup = Path(tempfile.mkdtemp(prefix='install-backup-', dir=str(root)))
         receipt_path = root / 'install-receipt.json'
@@ -83,11 +86,14 @@ def install(root, backend, update=False, check=False, builder=build):
                 backend.delete_task(LEGACY_RECOVERY)
             changed.append('shortcut')
             backend.write_shortcut(exe)
+            changed.append('startup')
+            backend.write_startup(exe)
             changed.append('started')
             backend.start_task(exe)
             state = backend.wait_ready(exe)
             receipt = {'tests': tests, 'running': state, 'path': str(exe), 'task': TASK,
-                       'loginStart': True, 'supervisorRestart': True, 'periodicRecoveryTask': False,
+                       'loginStart': True, 'startupShortcut': str(backend.startup),
+                       'supervisorRestart': True, 'periodicRecoveryTask': False,
                        'sourceHashes': {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in SOURCES},
                        'exeSha256': hashlib.sha256(exe.read_bytes()).hexdigest(), 'backup': str(backup)}
             receipt_path.write_text(json.dumps(receipt, indent=2), encoding='utf-8')
@@ -97,6 +103,7 @@ def install(root, backend, update=False, check=False, builder=build):
                 backend.stop_started()
             rollback_errors = []
             for phase, undo in (
+                    ('startup', lambda: backend.restore_startup(startup)),
                     ('shortcut', lambda: backend.restore_shortcut(shortcut)),
                     ('recovery', lambda: backend.restore_task(LEGACY_RECOVERY, tasks[LEGACY_RECOVERY])),
                     ('task', lambda: backend.restore_task(TASK, tasks[TASK]))):
@@ -135,6 +142,7 @@ class WindowsBackend:
         self.folder = self.scheduler.GetFolder('\\')
         self.shell = win32com.client.Dispatch('WScript.Shell')
         self.shortcut = Path(self.shell.SpecialFolders('Desktop')) / 'Discord Link Fixer.lnk'
+        self.startup = Path(self.shell.SpecialFolders('Startup')) / 'Discord Link Fixer.lnk'
         self.exe = None
         self.started_at = None
         self.token = None
@@ -194,7 +202,7 @@ class WindowsBackend:
 
     def register_task(self, exe):
         task = self.scheduler.NewTask(0)
-        task.RegistrationInfo.Description = 'Discord link paste helper. Login and guarded supervisor recovery; no periodic duplicate launch.'
+        task.RegistrationInfo.Description = 'Discord link paste helper. Startup shortcut launches this guarded supervisor; no duplicate logon trigger.'
         task.Principal.UserId = self.account
         task.Principal.LogonType = 3
         task.Principal.RunLevel = 0
@@ -208,8 +216,6 @@ class WindowsBackend:
         task.Settings.RestartCount = 3
         task.Settings.StartWhenAvailable = True
         task.Settings.IdleSettings.StopOnIdleEnd = False
-        trigger = task.Triggers.Create(9)
-        trigger.UserId = self.account
         action = task.Actions.Create(0)
         action.Path, action.Arguments, action.WorkingDirectory = str(exe), '--login $(Arg0)', str(exe.parent)
         self.folder.RegisterTaskDefinition(TASK, task, 6, self.account, None, 3)
@@ -230,6 +236,27 @@ class WindowsBackend:
         link.Targetpath, link.Arguments, link.WorkingDirectory = str(exe), '--resume', str(exe.parent)
         link.Description = 'Discord link helper. Pause or Quit from its tray menu.'
         link.Save()
+
+    def read_startup(self):
+        return self.startup.read_bytes() if self.startup.exists() else None
+
+    def owns_startup(self, snapshot, exe):
+        link = self.shell.CreateShortCut(str(self.startup))
+        return (Path(link.Targetpath).resolve() == exe.resolve() and link.Arguments == '--startup'
+                and Path(link.WorkingDirectory).resolve() == exe.parent.resolve())
+
+    def write_startup(self, exe):
+        self.startup.parent.mkdir(parents=True, exist_ok=True)
+        link = self.shell.CreateShortCut(str(self.startup))
+        link.Targetpath, link.Arguments, link.WorkingDirectory = str(exe), '--startup', str(exe.parent)
+        link.Description = 'Start Discord Link Fixer with supervisor recovery. Manage in Task Manager Startup apps.'
+        link.Save()
+
+    def restore_startup(self, snapshot):
+        if snapshot is None:
+            self.startup.unlink(missing_ok=True)
+        else:
+            self.startup.write_bytes(snapshot)
 
     def restore_shortcut(self, snapshot):
         if snapshot is None:

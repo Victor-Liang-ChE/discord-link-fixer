@@ -61,6 +61,7 @@ static class Program {
         } catch (Exception error) { Error("bootstrap", error); return Failed; }
     }
     [MethodImpl(MethodImplOptions.NoInlining)] static int Start(string[] args) {
+        if (Array.IndexOf(args, "--startup") >= 0) return StartLoginTask();
         if (Array.IndexOf(args, "--steam-check") >= 0) {
             return SteamCheck();
         }
@@ -91,6 +92,16 @@ static class Program {
             string token = Array.Find(args, delegate(string arg) { return arg.StartsWith("--install-token=", StringComparison.Ordinal); });
             if (token != null && !Regex.IsMatch(token, @"\A--install-token=[a-f0-9]{32}\z")) return Failed;
             return Supervise(token);
+        }
+    }
+    internal static ProcessStartInfo LoginTaskCommand() {
+        return new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe"),
+            "/Run /TN \"Discord Link Fixer\"") { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden };
+    }
+    static int StartLoginTask() {
+        using (Process task = Process.Start(LoginTaskCommand())) {
+            if (!task.WaitForExit(15000)) return Failed;
+            return task.ExitCode;
         }
     }
     [MethodImpl(MethodImplOptions.NoInlining)] static int SteamCheck() {

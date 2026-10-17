@@ -16,6 +16,8 @@ class Backend:
         self.tasks = {installer.TASK: {'xml': 'owned-primary', 'enabled': False},
                       installer.LEGACY_RECOVERY: {'xml': 'owned-recovery', 'enabled': True}}
         self.shortcut = b'owned shortcut'
+        self.startup = Path('Startup') / 'Discord Link Fixer.lnk'
+        self.startup_data = None
         self.live = False
         self.calls = []
         self.fail = None
@@ -31,6 +33,20 @@ class Backend:
 
     def owns_shortcut(self, shortcut, exe):
         return shortcut.startswith(b'owned')
+
+    def read_startup(self):
+        return self.startup_data
+
+    def owns_startup(self, snapshot, exe):
+        return snapshot.startswith(b'owned')
+
+    def write_startup(self, exe):
+        self.startup_data = b'owned startup'
+        self.mutate('startup')
+
+    def restore_startup(self, snapshot):
+        self.startup_data = snapshot
+        self.calls.append('undo startup')
 
     def running(self, exe):
         return self.live
@@ -126,6 +142,21 @@ class InstallerTests(unittest.TestCase):
             self.run_install()
         self.assertEqual(self.backend.calls, [])
 
+    def test_foreign_startup_shortcut_blocks_before_build(self):
+        self.backend.startup_data = b'foreign'
+        with self.assertRaisesRegex(RuntimeError, 'Startup shortcut ownership'):
+            self.run_install(update=True)
+        self.assertEqual((self.builds, self.backend.calls), (0, []))
+
+    def test_concurrent_startup_edit_blocks_before_mutation(self):
+        def concurrent(root, destination):
+            result = self.build(root, destination)
+            self.backend.startup_data = b'owned concurrently changed'
+            return result
+        with self.assertRaisesRegex(RuntimeError, 'changed during validation'):
+            installer.install(self.root, self.backend, update=True, builder=concurrent)
+        self.assertEqual(self.backend.calls, [])
+
     def test_running_helper_not_stopped(self):
         self.backend.live = True
         with self.assertRaises(RuntimeError):
@@ -167,13 +198,14 @@ class InstallerTests(unittest.TestCase):
 
     def test_every_partial_mutation_rolls_back(self):
         tasks, shortcut = copy.deepcopy(self.backend.tasks), self.backend.shortcut
-        for failure in ('task', 'recovery', 'shortcut', 'started', 'ready'):
+        for failure in ('task', 'recovery', 'shortcut', 'startup', 'started', 'ready'):
             with self.subTest(failure=failure):
                 self.backend = Backend()
                 self.backend.fail = failure
                 with self.assertRaises(RuntimeError):
                     self.run_install(update=True)
                 self.unchanged(tasks, shortcut)
+                self.assertIsNone(self.backend.startup_data)
                 self.assertFalse(self.backend.live)
 
     def test_initial_install_rollback_removes_only_new_artifacts(self):
@@ -188,6 +220,14 @@ class InstallerTests(unittest.TestCase):
         self.assertIsNone(self.backend.shortcut)
         self.assertFalse((self.root / 'DiscordLinkFixer.exe').exists())
         self.assertFalse((self.root / 'install-receipt.json').exists())
+        self.assertIsNone(self.backend.startup_data)
+
+    def test_existing_startup_restored_after_failed_update(self):
+        self.backend.startup_data = b'owned old startup'
+        self.backend.fail = 'ready'
+        with self.assertRaises(RuntimeError):
+            self.run_install(update=True)
+        self.assertEqual(self.backend.startup_data, b'owned old startup')
 
     def test_success_removes_periodic_recovery_only(self):
         result = self.run_install(update=True)
@@ -196,6 +236,40 @@ class InstallerTests(unittest.TestCase):
         self.assertIn(installer.TASK, self.backend.tasks)
         self.assertEqual((self.root / 'DiscordLinkFixer.exe').read_bytes(), b'verified candidate')
         self.assertEqual(len(result['sourceHashes']), len(installer.SOURCES))
+        self.assertEqual(self.backend.startup_data, b'owned startup')
+        self.assertEqual(result['startupShortcut'], str(self.backend.startup))
+
+    def test_real_startup_shortcut_target_and_ownership(self):
+        link = SimpleNamespace(Targetpath='', Arguments='', WorkingDirectory='', Save=lambda: None)
+        backend = installer.WindowsBackend.__new__(installer.WindowsBackend)
+        backend.startup = self.root / 'Startup' / 'Discord Link Fixer.lnk'
+        backend.shell = SimpleNamespace(CreateShortCut=lambda path: link)
+        exe = self.root / 'DiscordLinkFixer.exe'
+        backend.write_startup(exe)
+        self.assertEqual(link.Arguments, '--startup')
+        self.assertTrue(backend.owns_startup(b'snapshot', exe))
+        for field, value in [('Arguments', '--login'), ('Targetpath', str(self.root / 'foreign.exe')),
+                             ('WorkingDirectory', str(self.root / 'foreign'))]:
+            saved = getattr(link, field)
+            setattr(link, field, value)
+            self.assertFalse(backend.owns_startup(b'snapshot', exe))
+            setattr(link, field, saved)
+
+    def test_task_retains_recovery_without_a_logon_trigger(self):
+        task = SimpleNamespace(RegistrationInfo=SimpleNamespace(), Principal=SimpleNamespace(),
+                               Settings=SimpleNamespace(IdleSettings=SimpleNamespace()),
+                               Actions=SimpleNamespace(Create=lambda kind: SimpleNamespace()))
+        # Deliberately has no Triggers member; adding a logon trigger must fail this gate.
+        registered = []
+        backend = installer.WindowsBackend.__new__(installer.WindowsBackend)
+        backend.scheduler = SimpleNamespace(NewTask=lambda flags: task)
+        backend.folder = SimpleNamespace(RegisterTaskDefinition=lambda *args: registered.append(args))
+        backend.account = 'user'
+        backend.register_task(self.root / 'DiscordLinkFixer.exe')
+        self.assertEqual(task.Settings.RestartCount, 3)
+        self.assertEqual(task.Settings.MultipleInstances, 2)
+        self.assertEqual(task.Principal.LogonType, 3)
+        self.assertEqual(len(registered), 1)
 
     def test_real_backend_uses_scalar_bstr_launch_token(self):
         values = []

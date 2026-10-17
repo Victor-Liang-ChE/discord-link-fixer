@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-17",
+  "host": "VictorComputer",
+  "baseCommit": "772f33f",
+  "purpose": "Expose enabled login startup in Task Manager without duplicate logon launches or loss of supervisor recovery.",
+  "installedPath": "C:\\Users\\victo\\AppData\\Local\\Discord Link Fixer\\DiscordLinkFixer.exe",
+  "installedExeSha256": "62cc68df87833ac74660fe1f81e9df36bf00e729639e34ec850db11f46abac08",
+  "changedSourceSha256": {
+    "windows/DiscordLinkFixer.cs": "9f80dca694579e22b79ba375c56307e93da0232048f8856d16eeb6a04006a7e3",
+    "windows/install.py": "080a0265c65ec4986ef09e9f757f09eeab75aa2b8e48955d49e8ecea3a287c74",
+    "windows/test_install.py": "56f54b21a8d8207fc3798da7b39b06bc88976ee3af7a0ef63305b35037fc6f39",
+    "windows/WindowsTests.cs": "e5d65001284ca7b82199cbaa77ffacd961802d20784e6b283b0bd259256ecc7c"
+  },
+  "automatedGates": {
+    "installerTestsNormal": 21,
+    "installerTestsOptimized": 21,
+    "urlCases": 30,
+    "scopeCases": 6,
+    "updateNoticeCases": 3,
+    "pureRegressionChecks": 123,
+    "nativeClipboardChecks": 31,
+    "bootstrapPassed": true,
+    "schedulerParameterGatePassed": true,
+    "missingGuiDependencySafelyRejected": true,
+    "isolatedWorkerCrashRecovered": true,
+    "isolatedWorkerRecoverySeconds": 5.375,
+    "isolatedDuplicateExitCode": 21,
+    "isolatedIntentionalQuitRespected": true
+  },
+  "installedStartup": {
+    "startupShortcut": "C:\\Users\\victo\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Discord Link Fixer.lnk",
+    "arguments": "--startup",
+    "coldStartupCommandExit": 0,
+    "workerReadyInInteractiveSession": true,
+    "hookInstalled": true,
+    "repeatedStartupPreservedExistingPids": true,
+    "taskLogonTriggerCount": 0,
+    "taskRecoveryCount": 3,
+    "wmiStartupName": "Discord Link Fixer",
+    "taskManagerRow": "DiscordLinkFixer.exe",
+    "taskManagerStatus": "Enabled",
+    "taskManagerVerifiedThroughUIAutomationAndScreenshot": true,
+    "screenshotLocal": "build/windows-startup-apps-20261017.png"
+  },
+  "rawEvidenceLocal": [
+    "build/windows-startup-verification-20261017.json",
+    "build/windows-startup-lifecycle-20261017.json",
+    "build/windows-startup-rollout-20261017.json",
+    "build/windows-startup-ui-20261017.json"
+  ],
+  "rawEvidenceWindows": "C:\\Users\\victo\\AppData\\Local\\Temp\\discord-link-fixer-startup-20261017",
+  "rollbackBackupWindows": "C:\\Users\\victo\\AppData\\Local\\Discord Link Fixer\\startup-update-backup-ca91f72a294543f19c729855c7d654de",
+  "limits": [
+    "No actual reboot or sign-out was performed. The exact Startup shortcut command was exercised from a stopped helper instead.",
+    "No real Discord draft paste was performed. Automated clipboard tests used a private non-visible window station.",
+    "Task Manager UI verification required an elevated read-only inspector because the initial medium-integrity inspector could not access the navigation controls.",
+    "The first candidate build attempted identical source and destination fixture paths and failed before deployment; the corrected separate candidate directory passed qualification."
+  ],
+  "safety": {
+    "unrelatedProcessesSignaled": false,
+    "userClipboardTouched": false,
+    "rebooted": false,
+    "temporaryValidationTasksRemoved": true,
+    "taskManagerLeftOpenAtUserRequestedStartupList": true
+  }
+}

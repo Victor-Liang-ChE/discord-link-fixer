@@ -2,7 +2,7 @@
   "date": "2026-10-17",
   "host": "VictorComputer",
   "baseCommit": "461a44711cbef0f6829dd5467b857e9481557d87",
-  "status": "installed-automated-gates-passed-awaiting-real-discord-draft-confirmation",
+  "status": "installed-automated-gates-passed-real-discord-draft-user-confirmed",
   "problem": "The helper rejected text copies containing Chromium source URL or RFH token clipboard formats.",
   "fix": "Accept only those two additional named formats within unchanged input limits. Preserve their bounded opaque bytes during conversion and restore every original format afterward. Do not deserialize Chromium metadata or pass stale original HTML as converted content.",
   "regressionProof": {
@@ -15,6 +15,14 @@
     "windows/NativeClipboardTests.cs": "47a7e72a143ed78dddc86b89724b8d0c51dd76c887ae2cd13246babf1faf3b22"
   },
   "installedExeSha256": "ca07f5dc22298c39bbece5fae9407ab7051af0baa41f17e3cde3d79f8564bd80",
+  "realDiscordDraft": {
+    "date": "2026-10-17",
+    "source": "User response to the requested unsent Discord desktop draft smoke test",
+    "method": "Copy the previously failing x.com link from Chrome and Ctrl+V into an empty Discord desktop draft",
+    "reportedResult": "Yes, it becomes fxtwitter.com",
+    "conversionConfirmed": true,
+    "scope": "User-confirmed success for this workflow, not a claim that every link, clipboard format or app is covered"
+  },
   "gates": {
     "installerNormal": 21,
     "installerOptimized": 21,
@@ -56,7 +64,7 @@
   "verificationNotes": [
     "The temporary payload may acquire additional Windows-synthesized text formats. Tests inspect that private temporary clipboard through native APIs without raising the production input snapshot limit.",
     "All automated clipboard tests use a private non-visible window station. No real message was sent or existing Discord draft overwritten.",
-    "The user confirmed the failing workflow is Ctrl+V in desktop Discord. A real unsent-draft confirmation has been requested after deployment and is still pending.",
+    "The user confirmed the failing workflow is Ctrl+V in desktop Discord and subsequently confirmed that the previously failing link becomes fxtwitter.com in the requested real unsent-draft smoke test.",
     "Only the verified helper was gracefully quit and restarted for installation and startup verification. No Discord restart, reboot or unrelated process signal occurred."
   ],
   "rawEvidenceLocal": [

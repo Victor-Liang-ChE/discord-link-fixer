@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-17",
+  "host": "VictorComputer",
+  "baseCommit": "461a44711cbef0f6829dd5467b857e9481557d87",
+  "status": "installed-automated-gates-passed-awaiting-real-discord-draft-confirmation",
+  "problem": "The helper rejected text copies containing Chromium source URL or RFH token clipboard formats.",
+  "fix": "Accept only those two additional named formats within unchanged input limits. Preserve their bounded opaque bytes during conversion and restore every original format afterward. Do not deserialize Chromium metadata or pass stale original HTML as converted content.",
+  "regressionProof": {
+    "oldImplementationFailedNewNativeTest": true,
+    "oldFailure": "Chromium copy accepted with bounded provenance",
+    "updatedImplementationPassedSameTest": true
+  },
+  "sourceSha256": {
+    "windows/ClipboardTransactions.cs": "a159d5a6dad66c5f14e56140181e626629c3035aa566cb5f0b77835c8621dfff",
+    "windows/NativeClipboardTests.cs": "47a7e72a143ed78dddc86b89724b8d0c51dd76c887ae2cd13246babf1faf3b22"
+  },
+  "installedExeSha256": "ca07f5dc22298c39bbece5fae9407ab7051af0baa41f17e3cde3d79f8564bd80",
+  "gates": {
+    "installerNormal": 21,
+    "installerOptimized": 21,
+    "urlCases": 30,
+    "scopeCases": 6,
+    "updateNoticeCases": 3,
+    "pureRegressionChecks": 123,
+    "nativeClipboardChecks": 80,
+    "bootstrapAndSchedulerPassed": true,
+    "missingGuiDependencySafelyRejected": true,
+    "isolatedWorkerCrashRecovered": true,
+    "isolatedWorkerRecoverySeconds": 5.375,
+    "isolatedDuplicateRejected": true,
+    "isolatedIntentionalQuitRespected": true,
+    "installedStartupLaunchPassed": true,
+    "installedDuplicateStartupPreservedPids": true,
+    "installedInteractiveWorkerReadyWithHook": true
+  },
+  "coverageAdded": [
+    "Chrome-style clipboard including HTML and both provenance formats",
+    "Same copy with RTF at the existing input-format count limit",
+    "Converted Unicode text with both source metadata values preserved",
+    "Temporary history/cloud policies remain disabled with metadata present",
+    "Repeated paste renews the restore deadline",
+    "Original format set and every format's raw bytes restored exactly",
+    "Oversized metadata rejected without clipboard mutation",
+    "Aggregate metadata byte limit retained",
+    "Excess input-format count rejected",
+    "Lookalike Chromium format remains unknown and is rejected"
+  ],
+  "unchangedSafetyLimits": {
+    "maxFormatBytes": 1048576,
+    "maxTotalBytes": 2097152,
+    "maxInputFormats": 8,
+    "otherUnknownCustomFormatsRejected": true,
+    "imagesAndFilesPassThrough": true,
+    "existingTestsRemoved": false
+  },
+  "verificationNotes": [
+    "The temporary payload may acquire additional Windows-synthesized text formats. Tests inspect that private temporary clipboard through native APIs without raising the production input snapshot limit.",
+    "All automated clipboard tests use a private non-visible window station. No real message was sent or existing Discord draft overwritten.",
+    "The user confirmed the failing workflow is Ctrl+V in desktop Discord. A real unsent-draft confirmation has been requested after deployment and is still pending.",
+    "Only the verified helper was gracefully quit and restarted for installation and startup verification. No Discord restart, reboot or unrelated process signal occurred."
+  ],
+  "rawEvidenceLocal": [
+    "build/windows-chromium-baseline-failure-20261017.txt",
+    "build/windows-chromium-verification-20261017.json",
+    "build/windows-chromium-lifecycle-20261017.json",
+    "build/windows-chromium-rollout-20261017.json"
+  ],
+  "rawEvidenceWindows": "C:\\Users\\victo\\AppData\\Local\\Temp\\discord-link-fixer-chromium-20261017",
+  "rollbackBackupWindows": "C:\\Users\\victo\\AppData\\Local\\Discord Link Fixer\\startup-update-backup-4dd32e94bff74c3ca6783342ccff1a07",
+  "referenceSources": [
+    "https://chromium.googlesource.com/chromium/src/+/HEAD/content/public/browser/clipboard_types.cc",
+    "https://raw.githubusercontent.com/chromium/chromium/main/ui/base/clipboard/clipboard_format_type_win.cc",
+    "https://raw.githubusercontent.com/chromium/chromium/main/ui/base/clipboard/clipboard_win.cc"
+  ]
+}

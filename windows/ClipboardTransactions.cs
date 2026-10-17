@@ -6,6 +6,7 @@ using System.Text;
 sealed class ClipboardSnapshot {
     public uint Sequence;
     public Dictionary<uint, byte[]> Formats;
+    public Dictionary<uint, byte[]> Provenance;
     public string Text;
 }
 
@@ -43,7 +44,8 @@ sealed class ClipboardTransaction {
         catch (System.Text.RegularExpressions.RegexMatchTimeoutException) { return; }
         if (converted == snapshot.Text) return;
         candidate = snapshot;
-        replacement = new Dictionary<uint, byte[]> { { 13, Encoding.Unicode.GetBytes(converted + "\0") } };
+        replacement = snapshot.Provenance == null ? new Dictionary<uint, byte[]>() : new Dictionary<uint, byte[]>(snapshot.Provenance);
+        replacement[13] = Encoding.Unicode.GetBytes(converted + "\0");
     }
 
     public bool Paste(uint expected, long now, Func<bool> targetValid) {
@@ -79,7 +81,7 @@ sealed class ClipboardTransaction {
 sealed class NativeClipboard : IClipboardStore {
     public const int MaxFormatBytes = 1048576, MaxTotalBytes = 2097152, MaxFormats = 8;
     readonly IntPtr window;
-    readonly uint html, rtf, history, cloud, marker;
+    readonly uint html, rtf, history, cloud, marker, sourceUrl, sourceToken;
     byte[] ownedMarker;
     bool partialWrite;
     [DllImport("user32.dll", SetLastError=true)] static extern bool OpenClipboard(IntPtr window);
@@ -103,9 +105,12 @@ sealed class NativeClipboard : IClipboardStore {
         html = RegisterClipboardFormat("HTML Format"); rtf = RegisterClipboardFormat("Rich Text Format");
         history = RegisterClipboardFormat("CanIncludeInClipboardHistory"); cloud = RegisterClipboardFormat("CanUploadToCloudClipboard");
         marker = RegisterClipboardFormat("DiscordLinkFixer.Transaction.v2");
+        sourceUrl = RegisterClipboardFormat("Chromium internal source URL");
+        sourceToken = RegisterClipboardFormat("Chromium internal source RFH token");
     }
     bool Allowed(uint format) { return format == 1 || format == 7 || format == 13 || format == 16
-        || format != 0 && (format == html || format == rtf || format == history || format == cloud || format == marker); }
+        || format != 0 && (format == html || format == rtf || format == history || format == cloud || format == marker
+            || format == sourceUrl || format == sourceToken); }
 
     bool OwnsLocked() {
         if (GetClipboardOwner() != window) return false;
@@ -146,6 +151,7 @@ sealed class NativeClipboard : IClipboardStore {
             }
             if (!formats.Contains(13)) return null;
             Dictionary<uint, byte[]> saved = new Dictionary<uint, byte[]>();
+            Dictionary<uint, byte[]> provenance = new Dictionary<uint, byte[]>();
             int total = 0;
             foreach (uint format in formats) {
                 IntPtr handle = GetClipboardData(format);
@@ -153,7 +159,11 @@ sealed class NativeClipboard : IClipboardStore {
                 if (handle == IntPtr.Zero || length == 0 || length > MaxFormatBytes || total + (long)length > MaxTotalBytes) return null;
                 IntPtr pointer = GlobalLock(handle);
                 if (pointer == IntPtr.Zero) return null;
-                try { byte[] bytes = new byte[(int)length]; Marshal.Copy(pointer, bytes, 0, bytes.Length); saved.Add(format, bytes); }
+                try {
+                    byte[] bytes = new byte[(int)length]; Marshal.Copy(pointer, bytes, 0, bytes.Length); saved.Add(format, bytes);
+                    // Preserve browser provenance as bounded opaque bytes, never deserialize it.
+                    if (format == sourceUrl || format == sourceToken) provenance.Add(format, bytes);
+                }
                 finally { GlobalUnlock(handle); }
                 total += (int)length;
             }
@@ -162,7 +172,7 @@ sealed class NativeClipboard : IClipboardStore {
             int end = 0;
             while (end + 1 < unicode.Length && (unicode[end] != 0 || unicode[end + 1] != 0)) end += 2;
             if (end + 1 >= unicode.Length || end / 2 > 500000) return null;
-            return new ClipboardSnapshot { Sequence = Sequence, Formats = saved, Text = Encoding.Unicode.GetString(unicode, 0, end) };
+            return new ClipboardSnapshot { Sequence = Sequence, Formats = saved, Provenance = provenance, Text = Encoding.Unicode.GetString(unicode, 0, end) };
         } finally { CloseClipboard(); }
     }
 
@@ -205,7 +215,7 @@ sealed class NativeClipboard : IClipboardStore {
         try {
             var publish = new Dictionary<uint, byte[]>(desired);
             // Temporary links should not become new Windows history/cloud clipboard entries.
-            if (!restoring && desired.Count == 1 && desired.ContainsKey(13)) {
+            if (!restoring && desired.ContainsKey(13)) {
                 if (history != 0) publish[history] = new byte[4];
                 if (cloud != 0) publish[cloud] = new byte[4];
                 if (marker == 0) return ClipboardWrite.Unchanged;

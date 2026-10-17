@@ -21,11 +21,13 @@ static class NativeClipboardTests {
     [DllImport("user32.dll")] static extern bool CloseClipboard();
     [DllImport("user32.dll")] static extern bool EmptyClipboard();
     [DllImport("user32.dll")] static extern IntPtr SetClipboardData(uint format, IntPtr value);
+    [DllImport("user32.dll")] static extern IntPtr GetClipboardData(uint format);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern uint RegisterClipboardFormat(string name);
     [DllImport("kernel32.dll")] static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
     [DllImport("kernel32.dll")] static extern IntPtr GlobalLock(IntPtr memory);
     [DllImport("kernel32.dll")] static extern bool GlobalUnlock(IntPtr memory);
     [DllImport("kernel32.dll")] static extern IntPtr GlobalFree(IntPtr memory);
+    [DllImport("kernel32.dll")] static extern UIntPtr GlobalSize(IntPtr memory);
     static int count;
     static void Check(bool value, string label) { count++; if (!value) throw new Exception(label); }
     static byte[] Text(string value) { return Encoding.Unicode.GetBytes(value + "\0"); }
@@ -38,6 +40,15 @@ static class NativeClipboardTests {
         try { Marshal.Copy(value, 0, pointer, value.Length); }
         finally { GlobalUnlock(memory); }
         if (SetClipboardData(format, memory) == IntPtr.Zero) { GlobalFree(memory); throw new Exception("SetClipboardData"); }
+    }
+    static byte[] ReadRaw(uint format) {
+        IntPtr memory = GetClipboardData(format);
+        ulong length = GlobalSize(memory).ToUInt64();
+        if (memory == IntPtr.Zero || length == 0 || length > NativeClipboard.MaxFormatBytes) throw new Exception("Invalid test clipboard allocation");
+        IntPtr pointer = GlobalLock(memory);
+        if (pointer == IntPtr.Zero) throw new Exception("GlobalLock");
+        try { var bytes = new byte[(int)length]; Marshal.Copy(pointer, bytes, 0, bytes.Length); return bytes; }
+        finally { GlobalUnlock(memory); }
     }
     sealed class Window : NativeWindow, IDisposable {
         public bool Rendered;
@@ -102,6 +113,63 @@ static class NativeClipboardTests {
             snapshot = store.Read();
             Check(Convert.ToBase64String(snapshot.Formats[html]) == Convert.ToBase64String(rich[html]), "HTML bytes preserved without deserialization");
             Check(Convert.ToBase64String(snapshot.Formats[rtf]) == Convert.ToBase64String(rich[rtf]), "RTF bytes preserved without deserialization");
+
+            uint sourceUrl = RegisterClipboardFormat("Chromium internal source URL");
+            uint sourceToken = RegisterClipboardFormat("Chromium internal source RFH token");
+            byte[] urlBytes = Encoding.UTF8.GetBytes("https://example.com/source\0");
+            byte[] tokenBytes = new byte[] { 255, 0, 16, 0, 128, 99, 0, 42 };
+            for (int includeRtf = 0; includeRtf < 2; includeRtf++) {
+                Check(OpenClipboard(window.Handle), "Chromium fixture clipboard lock");
+                try {
+                    EmptyClipboard(); Publish(13, Text("https://x.com/chrome/status/123"));
+                    Publish(html, rich[html]); Publish(sourceUrl, urlBytes); Publish(sourceToken, tokenBytes);
+                    if (includeRtf != 0) Publish(rtf, rich[rtf]);
+                } finally { CloseClipboard(); }
+                snapshot = store.Read();
+                Check(snapshot != null && snapshot.Text == "https://x.com/chrome/status/123", "Chromium copy accepted with bounded provenance");
+                Check(snapshot.Formats.Count <= NativeClipboard.MaxFormats, "original Chromium snapshot retains format limit");
+                transaction = new ClipboardTransaction(store); transaction.Prepare();
+                Check(transaction.Paste(store.Sequence, 0, delegate { return true; }), "Chromium native conversion");
+                // Inspect our private clipboard directly: Windows may synthesize additional text
+                // formats in the temporary payload, which is not a new input snapshot.
+                Check(OpenClipboard(window.Handle), "Chromium temporary clipboard inspection lock");
+                try {
+                    Check(Encoding.Unicode.GetString(ReadRaw(13)).TrimEnd('\0') == "https://fxtwitter.com/chrome/status/123", "Chromium converted text");
+                    Check(Convert.ToBase64String(ReadRaw(sourceUrl)) == Convert.ToBase64String(urlBytes), "source URL retained during conversion");
+                    Check(Convert.ToBase64String(ReadRaw(sourceToken)) == Convert.ToBase64String(tokenBytes), "opaque RFH token retained during conversion");
+                    Check(BitConverter.ToInt32(ReadRaw(history), 0) == 0 && BitConverter.ToInt32(ReadRaw(cloud), 0) == 0, "Chromium temporary history and cloud sync disabled");
+                } finally { CloseClipboard(); }
+                Check(transaction.Paste(store.Sequence, 500, delegate { return true; }), "repeated Chromium paste renews transaction");
+                Check(!transaction.Restore(1000, false) && transaction.Pending, "Chromium original retained until renewed deadline");
+                Check(transaction.Restore(1500, false), "Chromium clipboard restored");
+                var restored = store.Read();
+                Check(restored != null && restored.Formats.Count == snapshot.Formats.Count, "Chromium original format set restored");
+                foreach (var item in snapshot.Formats)
+                    Check(restored.Formats.ContainsKey(item.Key) && Convert.ToBase64String(restored.Formats[item.Key]) == Convert.ToBase64String(item.Value), "Chromium original bytes restored " + item.Key);
+            }
+
+            Check(OpenClipboard(window.Handle), "oversized Chromium metadata fixture lock");
+            try { EmptyClipboard(); Publish(13, Text("https://x.com/user/status/123")); Publish(sourceToken, new byte[NativeClipboard.MaxFormatBytes + 1]); }
+            finally { CloseClipboard(); }
+            sequence = store.Sequence;
+            Check(store.Read() == null && store.Sequence == sequence, "oversized Chromium metadata rejected without mutation");
+            Check(OpenClipboard(window.Handle), "Chromium aggregate limit fixture lock");
+            try { EmptyClipboard(); Publish(13, Text("https://x.com/user/status/123")); Publish(sourceToken, new byte[NativeClipboard.MaxFormatBytes]); Publish(sourceUrl, new byte[NativeClipboard.MaxFormatBytes]); }
+            finally { CloseClipboard(); }
+            sequence = store.Sequence;
+            Check(store.Read() == null && store.Sequence == sequence, "Chromium aggregate byte limit retained");
+            Check(OpenClipboard(window.Handle), "Chromium format count limit fixture lock");
+            try {
+                EmptyClipboard(); Publish(13, Text("https://x.com/user/status/123")); Publish(html, rich[html]); Publish(rtf, rich[rtf]);
+                Publish(sourceUrl, urlBytes); Publish(sourceToken, tokenBytes); Publish(history, new byte[4]); Publish(cloud, new byte[4]);
+            } finally { CloseClipboard(); }
+            sequence = store.Sequence;
+            Check(store.Read() == null && store.Sequence == sequence, "Chromium input format count limit retained");
+            Check(OpenClipboard(window.Handle), "Chromium lookalike format fixture lock");
+            try { EmptyClipboard(); Publish(13, Text("https://x.com/user/status/123")); Publish(RegisterClipboardFormat("Chromium internal source URL spoof"), new byte[] { 1 }); }
+            finally { CloseClipboard(); }
+            sequence = store.Sequence;
+            Check(store.Read() == null && store.Sequence == sequence, "lookalike Chromium format remains unknown");
 
             Check(OpenClipboard(window.Handle), "unknown-format clipboard lock");
             try { EmptyClipboard(); Publish(13, Text("https://x.com/user/status/123")); Publish(RegisterClipboardFormat("UnknownSerializedObjectTest"), new byte[] { 1, 2, 3 }); }

@@ -29,7 +29,7 @@
     {
       "WFWorkflowActionIdentifier": "is.workflow.actions.comment",
       "WFWorkflowActionParameters": {
-        "WFCommentActionText": "Share an X/Twitter tweet URL to this shortcut. It copies the fxtwitter link, then opens Discord on your messages list: pick a person or channel and paste. If started without Share Sheet input, use the clipboard. Only the domain changes; paths and query strings remain intact. Nothing is sent automatically."
+        "WFCommentActionText": "Share an X/Twitter tweet URL to this shortcut. It copies the fxtwitter link, then opens the share sheet with the fixed link: tap Discord to pick people or channels. If started without Share Sheet input, use the clipboard. Only the domain changes; paths and query strings remain intact. Nothing is sent automatically."
       }
     },
     {
@@ -102,10 +102,17 @@
       }
     },
     {
-      "WFWorkflowActionIdentifier": "is.workflow.actions.openurl",
+      "WFWorkflowActionIdentifier": "is.workflow.actions.detect.link",
+      "WFWorkflowActionParameters": {
+        "UUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9AB1",
+        "WFInput": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ActionOutput", "OutputUUID": "F5E1BBC5-37FB-4C1A-BFE8-00D556AAE11C", "OutputName": "Updated Text"}}
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.share",
       "WFWorkflowActionParameters": {
         "UUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9A01",
-        "WFInput": {"WFSerializationType": "WFTextTokenString", "Value": {"string": "discord://-/channels/@me", "attachmentsByRange": {}}}
+        "WFInput": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ActionOutput", "OutputUUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9AB1", "OutputName": "URLs"}}
       }
     },
     {

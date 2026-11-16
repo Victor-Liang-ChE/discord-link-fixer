@@ -13,7 +13,7 @@
   "WFWorkflowActions": [
     {
       "WFWorkflowActionIdentifier": "is.workflow.actions.comment",
-      "WFWorkflowActionParameters": {"WFCommentActionText": "Share an X/Twitter, Instagram, TikTok or Reddit URL to this shortcut. It copies the fixed link, then opens Discord on your messages list: pick a person or channel and paste. If started without Share Sheet input, use the clipboard. Only the domain changes; paths and query strings remain intact. Nothing is sent automatically. This shortcut needs no background process or startup job."}
+      "WFWorkflowActionParameters": {"WFCommentActionText": "Share an X/Twitter, Instagram, TikTok or Reddit URL to this shortcut. It copies the fixed link, then opens the share sheet with the fixed link: tap Discord to pick people or channels. If started without Share Sheet input, use the clipboard. Only the domain changes; paths and query strings remain intact. Nothing is sent automatically. This shortcut needs no background process or startup job."}
     },
     {
       "WFWorkflowActionIdentifier": "is.workflow.actions.detect.text",
@@ -83,10 +83,17 @@
       }
     },
     {
-      "WFWorkflowActionIdentifier": "is.workflow.actions.openurl",
+      "WFWorkflowActionIdentifier": "is.workflow.actions.detect.link",
+      "WFWorkflowActionParameters": {
+        "UUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9AB2",
+        "WFInput": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ActionOutput", "OutputUUID": "2BEA320C-1C35-4ED3-92F9-C5A1E2343403", "OutputName": "Updated Text"}}
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.share",
       "WFWorkflowActionParameters": {
         "UUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9A02",
-        "WFInput": {"WFSerializationType": "WFTextTokenString", "Value": {"string": "discord://-/channels/@me", "attachmentsByRange": {}}}
+        "WFInput": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ActionOutput", "OutputUUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9AB2", "OutputName": "URLs"}}
       }
     },
     {

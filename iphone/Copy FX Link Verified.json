@@ -102,17 +102,17 @@
       }
     },
     {
-      "WFWorkflowActionIdentifier": "is.workflow.actions.detect.link",
+      "WFWorkflowActionIdentifier": "is.workflow.actions.url",
       "WFWorkflowActionParameters": {
         "UUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9AB1",
-        "WFInput": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ActionOutput", "OutputUUID": "F5E1BBC5-37FB-4C1A-BFE8-00D556AAE11C", "OutputName": "Updated Text"}}
+        "WFURLActionURL": {"WFSerializationType": "WFTextTokenString", "Value": {"string": "￼", "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputUUID": "F5E1BBC5-37FB-4C1A-BFE8-00D556AAE11C", "OutputName": "Updated Text"}}}}
       }
     },
     {
       "WFWorkflowActionIdentifier": "is.workflow.actions.share",
       "WFWorkflowActionParameters": {
         "UUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9A01",
-        "WFInput": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ActionOutput", "OutputUUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9AB1", "OutputName": "URLs"}}
+        "WFInput": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ActionOutput", "OutputUUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9AB1", "OutputName": "URL"}}
       }
     },
     {

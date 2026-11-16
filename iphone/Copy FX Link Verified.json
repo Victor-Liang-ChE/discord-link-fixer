@@ -1,0 +1,161 @@
+{
+  "WFWorkflowName": "Copy FX Link Verified",
+  "WFWorkflowClientVersion": "5037.109",
+  "WFWorkflowClientRelease": "26.0",
+  "WFWorkflowMinimumClientVersion": 900,
+  "WFWorkflowMinimumClientVersionString": "900",
+  "WFWorkflowIcon": {
+    "WFWorkflowIconStartColor": 4282601983,
+    "WFWorkflowIconGlyphNumber": 59511
+  },
+  "WFWorkflowTypes": [
+    "ActionExtension"
+  ],
+  "WFWorkflowInputContentItemClasses": [
+    "WFStringContentItem",
+    "WFURLContentItem"
+  ],
+  "WFWorkflowNoInputBehavior": {
+    "Name": "WFWorkflowNoInputBehaviorGetClipboard",
+    "Parameters": {}
+  },
+  "WFWorkflowHasShortcutInputVariables": true,
+  "WFWorkflowImportQuestions": [],
+  "WFWorkflowOutputContentItemClasses": [
+    "WFContentItem",
+    "WFStringContentItem"
+  ],
+  "WFWorkflowActions": [
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.comment",
+      "WFWorkflowActionParameters": {
+        "WFCommentActionText": "Share an X/Twitter tweet URL to this shortcut. It copies the fxtwitter link, then opens the share sheet with the fixed link: tap Discord to pick people or channels. If started without Share Sheet input, use the clipboard. Only the domain changes; paths and query strings remain intact. Nothing is sent automatically."
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.detect.text",
+      "WFWorkflowActionParameters": {
+        "WFInput": {
+          "Value": {
+            "Type": "ExtensionInput"
+          },
+          "WFSerializationType": "WFTextTokenAttachment"
+        },
+        "UUID": "AE3603C4-AF37-4F6E-9FAA-EA51B28BD59C"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+      "WFWorkflowActionParameters": {
+        "WFInput": {
+          "Type": "Variable",
+          "Variable": {
+            "Value": {
+              "OutputUUID": "AE3603C4-AF37-4F6E-9FAA-EA51B28BD59C",
+              "Type": "ActionOutput",
+              "OutputName": "Text"
+            },
+            "WFSerializationType": "WFTextTokenAttachment"
+          }
+        },
+        "WFControlFlowMode": 0,
+        "GroupingIdentifier": "204FBD29-CE94-480B-ACB3-E524C30EBB62",
+        "WFCondition": 100
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.text.replace",
+      "WFWorkflowActionParameters": {
+        "WFReplaceTextRegularExpression": true,
+        "WFReplaceTextReplace": "$1fxtwitter.com",
+        "UUID": "F5E1BBC5-37FB-4C1A-BFE8-00D556AAE11C",
+        "WFReplaceTextCaseSensitive": false,
+        "WFInput": {
+          "Value": {
+            "string": "￼",
+            "attachmentsByRange": {
+              "{0, 1}": {
+                "OutputUUID": "AE3603C4-AF37-4F6E-9FAA-EA51B28BD59C",
+                "Type": "ActionOutput",
+                "OutputName": "Text"
+              }
+            }
+          },
+          "WFSerializationType": "WFTextTokenString"
+        },
+        "WFReplaceTextFind": "(?i)(?<![A-Za-z0-9_./@-])(https?://)(?:www\\.|mobile\\.)?(?:x\\.com|twitter\\.com)(?=/(?:[A-Za-z0-9_]+/status|i/web/status)/[0-9]+(?:[/?#]|$|[\\s<>)\\]\"']))"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.setclipboard",
+      "WFWorkflowActionParameters": {
+        "WFLocalOnly": true,
+        "WFInput": {
+          "Value": {
+            "OutputUUID": "F5E1BBC5-37FB-4C1A-BFE8-00D556AAE11C",
+            "Type": "ActionOutput",
+            "OutputName": "Updated Text"
+          },
+          "WFSerializationType": "WFTextTokenAttachment"
+        },
+        "UUID": "B458FD91-7ACA-4649-8B06-3B8C4D0BC1AF"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.url",
+      "WFWorkflowActionParameters": {
+        "UUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9AB1",
+        "WFURLActionURL": {"WFSerializationType": "WFTextTokenString", "Value": {"string": "￼", "attachmentsByRange": {"{0, 1}": {"Type": "ActionOutput", "OutputUUID": "F5E1BBC5-37FB-4C1A-BFE8-00D556AAE11C", "OutputName": "Updated Text"}}}}
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.share",
+      "WFWorkflowActionParameters": {
+        "UUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9A01",
+        "WFInput": {"WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ActionOutput", "OutputUUID": "6C1D3B52-9F1E-4E8A-B0A4-2F6D7C8E9AB1", "OutputName": "URL"}}
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+      "WFWorkflowActionParameters": {
+        "GroupingIdentifier": "204FBD29-CE94-480B-ACB3-E524C30EBB62",
+        "WFControlFlowMode": 1
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.alert",
+      "WFWorkflowActionParameters": {
+        "WFAlertActionMessage": "Nothing was copied. Share the post's link to Copy FX Link, or copy its link and run this shortcut again.",
+        "WFAlertActionTitle": "No link received",
+        "WFAlertActionCancelButtonShown": false
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+      "WFWorkflowActionParameters": {
+        "UUID": "E44ECA8E-A9FB-40FB-A7B3-FF0404E839C0",
+        "GroupingIdentifier": "204FBD29-CE94-480B-ACB3-E524C30EBB62",
+        "WFControlFlowMode": 2
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.output",
+      "WFWorkflowActionParameters": {
+        "WFOutput": {
+          "Value": {
+            "string": "￼",
+            "attachmentsByRange": {
+              "{0, 1}": {
+                "OutputUUID": "E44ECA8E-A9FB-40FB-A7B3-FF0404E839C0",
+                "Type": "ActionOutput",
+                "OutputName": "If Result"
+              }
+            }
+          },
+          "WFSerializationType": "WFTextTokenString"
+        },
+        "UUID": "763AEA4A-C516-4566-BBEC-7E8381855E59"
+      }
+    }
+  ]
+}

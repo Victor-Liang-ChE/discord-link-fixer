@@ -124,9 +124,9 @@ Native clipboard tests run in a private, non-visible window station with its own
 
 ## iPhone and iPad
 
-Import `iphone/Copy FX Link Verified.shortcut` (X/Twitter tweet links only) or `iphone/Discord Link Fixer.shortcut` (X/Twitter, Instagram, TikTok and Reddit) in Apple's Shortcuts app. Share a supported URL to the shortcut. It copies the fixed link and then opens the share sheet; tap Discord there to pick people or channels in Discord's own send picker, or dismiss the sheet and paste anywhere. Running it without shared input uses the clipboard. An already installed Shortcut does not update merely because its file changes; import the new file and replace or remove the old entry.
+Import `iphone/Copy FX Link Verified.shortcut` (X/Twitter tweet links only) or `iphone/Discord Link Fixer.shortcut` (X/Twitter, Instagram, TikTok and Reddit) in Apple's Shortcuts app. Share a supported URL to the shortcut. It copies the fixed link and then switches to Discord on your messages list; pick a person or channel and paste. Running it without shared input uses the clipboard. An already installed Shortcut does not update merely because its file changes; import the new file and replace or remove the old entry.
 
-iOS does not allow this to intercept ordinary Discord Paste continuously. Shortcuts cannot open Discord's recipient picker directly; the system share sheet is the only route, so Discord's icon in that sheet is one tap. Source validation does not prove behavior in an actual phone Share Sheet, which still needs a device check.
+iOS does not allow this to intercept ordinary Discord Paste continuously. Shortcuts cannot open Discord's own send picker directly, so the shortcut opens the Discord app instead. Source validation does not prove behavior in an actual phone Share Sheet, which still needs a device check.
 
 ## Privacy and limitations
 

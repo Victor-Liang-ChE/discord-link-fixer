@@ -20,9 +20,14 @@ static class Program {
         WriteState("last-error.txt", phase + ": " + error.GetType().FullName + " HRESULT=" + error.HResult.ToString("X8")
             + ". No clipboard, message or exception-message data recorded.");
     }
+    [DllImport("kernel32.dll")] static extern bool ProcessIdToSessionId(uint pid, out uint session);
+    // Process.SessionId re-reads the whole system process list on .NET Framework; read it once.
+    public static readonly int SelfId = Process.GetCurrentProcess().Id;
+    public static readonly int SelfSession = SessionOf(SelfId);
+    static int SessionOf(int pid) { uint session; return ProcessIdToSessionId((uint)pid, out session) ? (int)session : -1; }
     public static void StartupState(string phase) {
         WriteState("startup.json",
-            "{\"pid\":" + Process.GetCurrentProcess().Id + ",\"session\":" + Process.GetCurrentProcess().SessionId
+            "{\"pid\":" + SelfId + ",\"session\":" + SelfSession
             + ",\"phase\":\"" + phase + "\",\"utc\":\"" + DateTime.UtcNow.ToString("o") + "\"}");
     }
     static readonly Regex UrlToken = new Regex("(?i)(?<![A-Za-z0-9_./@-])https?://[^\\s<>\\\"'`]+", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
@@ -239,7 +244,7 @@ sealed class Helper : ApplicationContext {
     }
 
     void WriteStatus() {
-        Program.WriteState("running.json", "{\"pid\":" + Process.GetCurrentProcess().Id + ",\"session\":" + Process.GetCurrentProcess().SessionId
+        Program.WriteState("running.json", "{\"pid\":" + Program.SelfId + ",\"session\":" + Program.SelfSession
             + ",\"hookInstalled\":" + (service.HookInstalled ? "true" : "false") + ",\"clipboardPending\":" + (service.ClipboardPending ? "true" : "false")
             + ",\"maximumHookMs\":" + (Interlocked.Read(ref service.MaximumHookTicks) * 1000.0 / Stopwatch.Frequency).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)
             + ",\"pasteVerified\":false}");
@@ -249,9 +254,11 @@ sealed class Helper : ApplicationContext {
         try {
             uint pid;
             PasteService.GetWindowThreadProcessId(PasteService.GetForegroundWindow(), out pid);
-            using (Process foreground = Process.GetProcessById((int)pid)) {
-                if (!String.Equals(foreground.ProcessName, "Discord", StringComparison.OrdinalIgnoreCase)) return;
-                string version = FileVersionInfo.GetVersionInfo(foreground.MainModule.FileName).ProductVersion;
+            {
+                // GetProcessById + ProcessName each enumerated every process; read the one image path instead.
+                string image = PasteService.ImagePath(pid);
+                if (image == null || !String.Equals(Path.GetFileNameWithoutExtension(image), "Discord", StringComparison.OrdinalIgnoreCase)) return;
+                string version = FileVersionInfo.GetVersionInfo(image).ProductVersion;
                 if (String.IsNullOrEmpty(version)) return;
                 string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "discord-version.txt");
                 string previous = File.Exists(path) ? File.ReadAllText(path) : null;

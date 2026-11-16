@@ -49,18 +49,43 @@ sealed class PasteService {
     public static bool TargetValid(PasteJob job) { return GetForegroundWindow() == job.Window && FocusOf(job.Window) == job.Focus; }
     public static bool JobFresh(PasteJob job, long now) { return now >= job.Created && now - job.Created <= 250; }
 
-    public void RefreshProcesses() {
-        var ids = new System.Collections.Generic.List<int>();
-        string root = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Discord")) + Path.DirectorySeparatorChar;
-        foreach (Process process in Process.GetProcessesByName("Discord")) {
-            using (process) {
-                try {
-                    string path = Path.GetFullPath(process.MainModule.FileName);
-                    if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase) && String.Equals(Path.GetFileName(path), "Discord.exe", StringComparison.OrdinalIgnoreCase)) ids.Add(process.Id);
-                } catch { /* An exiting or higher-integrity process is not an eligible target. */ }
-            }
+    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool QueryFullProcessImageName(IntPtr process, int flags, System.Text.StringBuilder name, ref int size);
+    static readonly string DiscordRoot = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Discord")) + Path.DirectorySeparatorChar;
+    readonly object eligibility = new object();
+    uint knownPid;
+
+    // Image path of one process, or null. Opens with the same rights Process.MainModule needed
+    // (PROCESS_QUERY_INFORMATION | PROCESS_VM_READ), so processes it could not read stay ineligible.
+    // Never enumerates the system process list (NtQuerySystemInformation), which costs ~0.1-0.6 s of kernel CPU per call on this PC.
+    public static string ImagePath(uint pid) {
+        if (pid == 0) return null;
+        IntPtr handle = OpenProcess(0x0400 | 0x0010, false, pid);
+        if (handle == IntPtr.Zero) return null;
+        try {
+            var name = new System.Text.StringBuilder(1024); int size = name.Capacity;
+            return QueryFullProcessImageName(handle, 0, name, ref size) ? Path.GetFullPath(name.ToString(0, size)) : null;
+        } catch { return null; }
+        finally { CloseHandle(handle); }
+    }
+    static bool IsEligibleDiscord(uint pid) {
+        string path = ImagePath(pid);
+        return path != null && path.StartsWith(DiscordRoot, StringComparison.OrdinalIgnoreCase)
+            && String.Equals(Path.GetFileName(path), "Discord.exe", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Enqueue and SteamEligible only ever ask "is the foreground process an eligible Discord.exe",
+    // so only the foreground process is checked: on every foreground change (25 ms Pump) and
+    // re-validated once per second (the old refresh cadence), instead of listing every process.
+    public void RefreshProcesses() { RefreshForeground(true); }
+    void RefreshForeground(bool revalidate) {
+        uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+        lock (eligibility) {
+            if (pid == knownPid && !revalidate) return;
+            knownPid = pid;
+            discordProcesses = IsEligibleDiscord(pid) ? new[] { (int)pid } : new int[0];
         }
-        discordProcesses = ids.ToArray();
     }
 
     bool SteamEligible() {
@@ -182,6 +207,7 @@ sealed class PasteService {
                     if (transaction.Restore(Now, true)) { timer.Stop(); Application.ExitThread(); }
                     return;
                 }
+                service.RefreshForeground(false);
                 PasteJob job;
                 while (service.jobs.TryDequeue(out job)) {
                     Interlocked.Decrement(ref service.queued);

@@ -149,18 +149,11 @@ final class Helper: NSObject, NSApplicationDelegate {
         // Permission is requested only from the user's menu action, never on a
         // startup or recovery loop. A denied permission must not reopen Settings.
         writeStatus()
-        steamTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self, self.enabled, self.pending == nil,
-                  NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.hnc.Discord" else { return }
-            let board = NSPasteboard.general
-            let count = board.changeCount
-            guard count != self.steamClipboardCount else { return }
-            self.steamClipboardCount = count
-            guard let items = board.pasteboardItems, items.count == 1,
-                  !items[0].types.contains(.fileURL), !items[0].types.contains(.png), !items[0].types.contains(.tiff),
-                  let text = board.string(forType: .string), board.changeCount == count else { return }
-            if !SteamTrailers.shared.warm(text) && !SteamTrailers.shared.known(text) { self.steamClipboardCount = -1 }
-        }
+        // The Steam clipboard check only matters while Discord is frontmost, so the 0.25 s timer
+        // runs only then; app-activation notifications start and stop it instead of polling all day.
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(frontmostChanged(_:)),
+            name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        updateSteamTimer()
         if !UserDefaults.standard.bool(forKey: "notificationPermissionRequested") {
             notificationPermission()
         } else {
@@ -179,6 +172,29 @@ final class Helper: NSObject, NSApplicationDelegate {
             self.writeStatus()
             self.healthTicks += 1
             if self.healthTicks % 30 == 0 { self.checkDiscordVersion() }
+        }
+    }
+
+    @objc func frontmostChanged(_ note: Notification) { updateSteamTimer() }
+
+    func updateSteamTimer() {
+        let discordFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.hnc.Discord"
+        if discordFront, steamTimer == nil {
+            steamTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+                guard let self, self.enabled, self.pending == nil,
+                      NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.hnc.Discord" else { return }
+                let board = NSPasteboard.general
+                let count = board.changeCount
+                guard count != self.steamClipboardCount else { return }
+                self.steamClipboardCount = count
+                guard let items = board.pasteboardItems, items.count == 1,
+                      !items[0].types.contains(.fileURL), !items[0].types.contains(.png), !items[0].types.contains(.tiff),
+                      let text = board.string(forType: .string), board.changeCount == count else { return }
+                if !SteamTrailers.shared.warm(text) && !SteamTrailers.shared.known(text) { self.steamClipboardCount = -1 }
+            }
+        } else if !discordFront, let timer = steamTimer {
+            timer.invalidate()
+            steamTimer = nil
         }
     }
 
